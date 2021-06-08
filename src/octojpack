@@ -1,0 +1,1230 @@
+#! /bin/bash
+
+# Program name
+PROGRAM_NAME="Octojpack"
+PROGRAM_CODE="octojpack"
+PROGRAM_VERSION="1.0.0"
+PROGRAM_V="1.0"
+PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
+
+# Do some prep work
+command -v git >/dev/null 2>&1 || {
+  echo >&2 "[error] We require git for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not installed.  Aborting."
+  exit 1
+}
+command -v curl >/dev/null 2>&1 || {
+  echo >&2 "[error] We require curl for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not installed.  Aborting."
+  exit 1
+}
+command -v jq >/dev/null 2>&1 || {
+  echo >&2 "[error] We require jq for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not installed.  Aborting."
+  exit 1
+}
+
+# main function ˘Ô≈ôﺣ
+function main() {
+  # get the package details
+  # shellcheck disable=SC2015
+  [ -f "$VDM_PACKAGE_CONF_FILE" ] && getPackageDetails || {
+    echo >&2 "[error] We require config file with correct packaging details for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
+    clearMainEnv
+    exit 1
+  }
+  # get destination details
+  getRepositoryDetails || {
+    echo >&2 "[error] We require config file with correct destination repository details for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
+    clearMainEnv
+    exit 1
+  }
+  # build the project package path
+  setPackageDir || {
+    echo >&2 "[error] We could not set the package directories for ${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.  Aborting."
+    clearMainEnv
+    exit 1
+  }
+  # set the files
+  setFiles || {
+    echo >&2 "[error] We could not find any files for ${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO} package.  Aborting."
+    clearMainEnv
+    exit 1
+  }
+  # set languages
+  setLanguages
+  # set the package XML
+  setPackageXml
+  # set the readme
+  setReadMe
+  # set the licence file
+  setLicenseFile || {
+    echo >&2 "[error] We could not set the LICENSE for ${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.  Aborting."
+    clearMainEnv
+    exit 1
+  }
+  # set the installation file
+  setInstallFile
+  # get package repository
+  setRepository || {
+    echo >&2 "[error] We could not set the GIT repository for ${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.  Aborting."
+    clearMainEnv
+    exit 1
+  }
+  # remove all files
+  clearFiles
+  # clear main env
+  clearMainEnv
+  # final message
+  _echo "[Success] Package completely updated!"
+}
+
+# set the package details
+function getPackageDetails() {
+  # load the config data
+  VDM_CONFIG_DATA=$(cat "$VDM_PACKAGE_CONF_FILE")
+  # make sure we have package details
+  if [[ "${VDM_CONFIG_DATA}" =~ '"package"' ]] && [[ "${VDM_CONFIG_DATA}" =~ '"files"' ]]; then
+    # little information of progress
+    _echo "[info] Loading the Package Details..."
+    # make configuration globally available
+    export VDM_CONFIG_DATA
+    # check for errors
+    local has_error=false
+    # get the global config values if not set
+    getConfigValue 'VDM_PACKAGER' '.global.packager' false || VDM_PACKAGER="${PROGRAM_NAME} v${PROGRAM_V}"
+    getConfigValue 'VDM_PACKAGER_URL' '.global.packager_url' false || VDM_PACKAGER_URL="${PROGRAM_URL}"
+    getConfigValue 'VDM_PACKAGER_LANG' '.global.language' false || VDM_PACKAGER_LANG="en-GB"
+    getConfigValue 'VDM_GLOBAL_TOKEN' '.global.token' || has_error=true
+    getConfigValue 'VDM_GLOBAL_API' '.global.api' || has_error=true
+    getConfigValue 'VDM_GLOBAL_URL' '.global.url' || has_error=true
+    # check if we have some errors already
+    $has_error && return 13
+
+    # package related details
+    getConfigValue 'VDM_PACKAGE_NAME' '.package.package_name' || has_error=true
+    getConfigValue 'VDM_CODE_NAME' '.package.code_name' || has_error=true
+    getConfigValue 'VDM_PACKAGE_VERSION_ID' '.package.version_id' false
+    getConfigValue 'VDM_NAME' '.package.name' || has_error=true
+    getConfigValue 'VDM_DESCRIPTION' '.package.description' || has_error=true
+    getConfigValue 'VDM_MIN_JOOMLA_VERSION' '.package.min_joomla_version' false || VDM_MIN_JOOMLA_VERSION="3.8"
+    getConfigValue 'VDM_MAX_JOOMLA_VERSION' '.package.max_joomla_version' false || unset VDM_MAX_JOOMLA_VERSION
+    getConfigValue 'VDM_COPYRIGHT' '.package.copyright' || has_error=true
+    getConfigValue 'VDM_COPYRIGHT_YEAR' '.package.copyright_year' || has_error=true
+    getConfigValue 'VDM_LICENSE' '.package.license' || has_error=true
+    getConfigValue 'VDM_LICENSE_FILE' '.package.license_file' || has_error=true
+    getConfigValue 'VDM_INSTALLATION_FILE' '.package.installation_file' false || unset VDM_INSTALLATION_FILE
+    getConfigValue 'VDM_AUTHOR' '.package.author' || has_error=true
+    getConfigValue 'VDM_AUTHOR_EMAIL' '.package.author_email' || has_error=true
+    getConfigValue 'VDM_AUTHOR_URL' '.package.author_url' || has_error=true
+    getConfigValue 'VDM_UPDATE_SERVER' '.package.update_servers' || has_error=true
+    # check if we have some errors already
+    $has_error && return 13
+
+    # success
+    return 0
+  else
+    # failed
+    return 17
+  fi
+}
+
+# set the target repository details
+function getRepositoryDetails() {
+  # make sure we have package details
+  if [[ "${VDM_CONFIG_DATA}" =~ '"repository"' ]]; then
+    # little information of progress
+    _echo "[info] Loading the Repository Details..."
+    # check for errors
+    local has_error=false
+    # get the global config values if not set
+    getConfigValue 'VDM_PACKAGE_OWNER' '.repository.owner' || has_error=true
+    getConfigValue 'VDM_PACKAGE_REPO' '.repository.repo' || has_error=true
+    getConfigValue 'VDM_PACKAGE_TOKEN_NAME' '.repository.token_name' false || VDM_PACKAGE_TOKEN_NAME="VDM_GLOBAL_TOKEN"
+    getConfigValue 'VDM_PACKAGE_URL_NAME' '.repository.url_name' false || VDM_PACKAGE_URL_NAME="VDM_GLOBAL_URL"
+    getConfigValue 'VDM_PACKAGE_API_NAME' '.repository.api_name' false || VDM_PACKAGE_API_NAME="VDM_GLOBAL_API"
+    # check if we have some errors already
+    $has_error && return
+    # set the package (api/url/toke)
+    VDM_PACKAGE_TOKEN=${!VDM_PACKAGE_TOKEN_NAME}
+    VDM_PACKAGE_URL=${!VDM_PACKAGE_URL_NAME}
+    VDM_PACKAGE_API=${!VDM_PACKAGE_API_NAME}
+    # make globally available
+    export VDM_PACKAGE_TOKEN
+    export VDM_PACKAGE_URL
+    export VDM_PACKAGE_API
+    # success
+    return 0
+  else
+    # failed
+    return 17
+  fi
+}
+
+# clear the main environment variables
+function clearMainEnv() {
+  # clear all exported package details
+  # SET IN: getRepositoryDetails
+  unset VDM_PACKAGE_OWNER
+  unset VDM_PACKAGE_REPO
+  unset VDM_PACKAGE_TOKEN_NAME
+  unset VDM_PACKAGE_TOKEN
+  unset VDM_PACKAGE_API_NAME
+  unset VDM_PACKAGE_API
+  unset VDM_PACKAGE_URL_NAME
+  unset VDM_PACKAGE_URL
+  # SET IN: setPackageDir
+  unset VDM_PACKAGE_DIR
+  unset VDM_PACKAGE_GIT_DIR
+  unset VDM_PACKAGE_SRC_DIR
+  unset VDM_PACKAGE_LANG_DIR
+  unset VDM_PACKAGE_XML
+  unset VDM_FILES_XML
+  unset VDM_LANGUAGES_XML
+  unset VDM_README_MD
+  unset VDM_INSTALL_PHP
+  # SET IN: getPackageDetails
+  unset VDM_CONFIG_DATA
+  unset VDM_PACKAGER
+  unset VDM_PACKAGER_URL
+  unset VDM_GLOBAL_TOKEN
+  unset VDM_GLOBAL_API
+  unset VDM_PACKAGE_NAME
+  unset VDM_CODE_NAME
+  unset VDM_PACKAGE_VERSION
+  unset VDM_PACKAGE_VERSION_ID
+  unset VDM_NAME
+  unset VDM_DESCRIPTION
+  unset VDM_MIN_JOOMLA_VERSION
+  unset VDM_MAX_JOOMLA_VERSION
+  unset VDM_COPYRIGHT
+  unset VDM_COPYRIGHT_YEAR
+  unset VDM_LICENSE
+  unset VDM_LICENSE_FILE
+  unset VDM_LICENSE_FILE_PATH
+  unset VDM_INSTALLATION_FILE
+  unset VDM_AUTHOR
+  unset VDM_AUTHOR_EMAIL
+  unset VDM_AUTHOR_URL
+  unset VDM_UPDATE_SERVER
+  # SET IN: callGiteaAPI
+  unset VDM_API_BUCKET
+}
+
+# clear all this projects files
+function clearFiles() {
+  # always remove files
+  rm -fr "${VDM_PACKAGE_DIR:?}"
+  rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${VDM_PACKAGE_REPO:?}"
+}
+
+# get value from config
+function getConfigValue() {
+  # get what we can from the config if not already set in the .env file
+  # so to set the value globally use the .env option
+  # to set per project use the config file of the project
+  # some local values
+  local value_key
+  # load the values
+  value_key="${2}"
+  # if has a value we are done
+  [ -n "${!1}" ] && return 0
+  # get the value
+  # shellcheck disable=SC2034
+  val=$(echo "${VDM_CONFIG_DATA}" | jq -r "$value_key")
+  # check the value not to be null
+  [ "${val}" = 'null' ] && {
+    # give little heads-up if not blocked
+    "${3:-true}"  && echo >&2 "[error] We require ($value_key) for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in $VDM_PACKAGE_CONF_FILE."
+    # we had no success
+    return 19
+  }
+  # set the dynamic variable $1=(MUST BE VALID VARIABLE NAME)
+  eval "$1"=\"\$val\"
+  return 0
+}
+
+# set the Package Path
+function setPackageDir() {
+  # little information of progress
+  _echo "[info] Setting the Package Directories..."
+  # the full project path
+  VDM_PACKAGE_DIR="${PACKAGE_DIR}/${VDM_PACKAGE_REPO}"
+  VDM_PACKAGE_GIT_DIR="${PACKAGE_DIR}/git"
+  VDM_PACKAGE_SRC_DIR="${VDM_PACKAGE_DIR}/src"
+  # always remove previous files (if found)
+  rm -fr "${VDM_PACKAGE_DIR:?}"
+  rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${VDM_PACKAGE_REPO:?}"
+  # set the package language folder
+  VDM_PACKAGE_LANG_DIR="${VDM_PACKAGE_DIR}/languages"
+  # set the package xml
+  VDM_PACKAGE_XML="${VDM_PACKAGE_DIR}/${VDM_PACKAGE_NAME,,}.xml"
+  # set the files xml
+  VDM_FILES_XML="${PACKAGE_DIR}/files.xml"
+  # set the languages xml
+  VDM_LANGUAGES_XML="${PACKAGE_DIR}/languages.xml"
+  # set the extensions list of files
+  VDM_README_FILES_MD="${PACKAGE_DIR}/README_FILES.md"
+  # set the README
+  VDM_README_MD="${VDM_PACKAGE_DIR}/README.md"
+  # set the license file
+  VDM_LICENSE_FILE_PATH="${VDM_PACKAGE_DIR}/LICENSE"
+  # set the package install script
+  VDM_INSTALL_PHP="${VDM_PACKAGE_DIR}/install_${VDM_CODE_NAME,,}.php"
+  # makes the project path available
+  export VDM_PACKAGE_DIR
+  export VDM_PACKAGE_GIT_DIR
+  export VDM_PACKAGE_SRC_DIR
+  export VDM_PACKAGE_LANG_DIR
+  # makes the project file locations available
+  export VDM_PACKAGE_XML
+  export VDM_FILES_XML
+  export VDM_LANGUAGES_XML
+  export VDM_README_MD
+  export VDM_INSTALL_PHP
+  export VDM_LICENSE_FILE_PATH
+  # make sure the packages dir is created
+  mkdir -p "${VDM_PACKAGE_DIR}" || return 12
+  #make sure the src dir is created
+  mkdir -p "${VDM_PACKAGE_SRC_DIR}" || return 12
+  #make sure the languages dir is created
+  mkdir -p "${VDM_PACKAGE_LANG_DIR}" || return 12
+  #make sure the git dir is created
+  mkdir -p "${VDM_PACKAGE_GIT_DIR}" || return 12
+  # success
+  return 0
+}
+
+# set the Files
+function setFiles() {
+  # little information of progress
+  _echo "[info] Loading the Files..."
+  # make sure its reset
+  echo -e '\t<files folder="src">' > "${VDM_FILES_XML}"
+  echo "" > "${VDM_README_FILES_MD}"
+  # check for errors
+  local has_error=false
+  local has_files=false
+  # loop over the repos
+  i=0
+  for owner in $(echo "${VDM_CONFIG_DATA}" | jq -r '.files[].owner');
+  do
+    # get the config values needed
+    # shellcheck disable=SC2015
+    [ -n "${owner}" ] && VDM_OWNER="${owner}" || continue
+    # check for errors
+    has_error=false
+    # get the global config values if not set
+    getConfigValue 'VDM_REPO' ".files[$i].repo" || has_error=true
+    getConfigValue 'VDM_TYPE' ".files[$i].type" || has_error=true
+    getConfigValue 'VDM_ID' ".files[$i].id" || has_error=true
+    getConfigValue 'VDM_ENABLED' ".files[$i].enabled" false || VDM_ENABLED=1
+    # check if we have some errors already
+    if $has_error; then
+      clearFileEnv
+      continue
+    fi
+    getConfigValue 'VDM_TOKEN_NAME' ".files[$i].token_name" false || VDM_TOKEN_NAME="VDM_GLOBAL_TOKEN"
+    getConfigValue 'VDM_API_NAME' ".files[$i].api_name" false || VDM_API_NAME="VDM_GLOBAL_API"
+    getConfigValue 'VDM_URL_NAME' ".files[$i].url_name" false || VDM_URL_NAME="VDM_GLOBAL_URL"
+    getConfigValue 'VDM_MODE' ".files[$i].mode" false || VDM_MODE='tags'
+    # set additional
+    VDM_GROUP=''
+    VDM_CLIENT=''
+    VDM_TYPE_KEY=''
+    VDM_TYPE_VAL=''
+    if [ "$VDM_TYPE" = 'plugin' ]; then
+      # set the plugin group
+      getConfigValue 'VDM_GROUP' ".files[$i].group" || has_error=true
+      # set the key
+      VDM_TYPE_KEY="group"
+      VDM_TYPE_VAL="${VDM_GROUP}"
+    elif [ "$VDM_TYPE" = 'module' ] || [ "$VDM_TYPE" = 'template' ]; then
+      # set module & template client
+      getConfigValue 'VDM_CLIENT' ".files[$i].client" || has_error=true
+      # set the key
+      VDM_TYPE_KEY="client"
+      VDM_TYPE_VAL="${VDM_CLIENT}"
+    fi
+    # check if we have some errors already
+    if $has_error; then
+      clearFileEnv
+      continue
+    fi
+    # set the URL
+    VDM_URL=${!VDM_URL_NAME}
+    # set the API
+    VDM_API=${!VDM_API_NAME}
+    # set the token
+    VDM_TOKEN=${!VDM_TOKEN_NAME}
+    # export these values
+    export VDM_OWNER
+    export VDM_MODE
+    export VDM_ENABLED
+    export VDM_TYPE_KEY
+    export VDM_TYPE_VAL
+    export VDM_TOKEN
+    export VDM_API
+    export VDM_URL
+    # get this zip packages
+    if getZipFile; then
+      # set the xml details for this package
+      setFile
+      # check if this is the package version ID
+      if [ -n "${VDM_PACKAGE_VERSION_ID}" ] &&
+        [ -z "${VDM_PACKAGE_VERSION}" ] &&
+        [ "${VDM_PACKAGE_VERSION_ID}" = "${VDM_ID}" ] ; then
+        # set the package version
+        VDM_PACKAGE_VERSION="${VDM_ZIP_NAME}";
+        export VDM_PACKAGE_VERSION
+      fi
+      # we have a file
+      has_files=true
+    fi
+    # increment
+    ((i++))
+    # clear env
+    clearFileEnv
+  done
+  # make sure to close the files
+  echo -e '\t</files>' >> "${VDM_FILES_XML}"
+  # check if we found a file
+  $has_files || return 13
+  # success
+  return 0
+}
+
+# just to clear all file ENVs
+function clearFileEnv() {
+    # SET IN: setFiles
+    unset VDM_OWNER
+    unset VDM_REPO
+    unset VDM_TYPE
+    unset VDM_ID
+    unset VDM_GROUP
+    unset VDM_CLIENT
+    unset VDM_TYPE_KEY
+    unset VDM_TYPE_VAL
+    unset VDM_TOKEN_NAME
+    unset VDM_TOKEN
+    unset VDM_API_NAME
+    unset VDM_API
+    unset VDM_URL_NAME
+    unset VDM_URL
+    unset VDM_MODE
+    # SET IN: getZipFile
+    unset VDM_ZIP_NAME
+    unset VDM_ZIP_MESSAGE
+}
+
+# get the repository zip package
+function getZipFile() {
+  # reset the zip details
+  VDM_ZIP_NAME=''
+  VDM_ZIP_MESSAGE=''
+  # check the mode
+  if [ "${VDM_MODE}" = 'tags' ] || [ "${VDM_MODE}" = 'releases' ]; then
+    # make API call
+    callGiteaAPI "${VDM_MODE}" "${VDM_OWNER}" "${VDM_REPO}" "${VDM_API}" "${VDM_TOKEN}" || return 11
+    # get the name
+    if [ -n "${VDM_API_BUCKET}" ]; then
+      VDM_ZIP_NAME=$(echo "${VDM_API_BUCKET}" | jq -r ".name")
+    else
+      return 11
+    fi
+    # get the message
+    if [ -n "${VDM_API_BUCKET}" ]; then
+      VDM_ZIP_MESSAGE=$(echo "${VDM_API_BUCKET}" | jq -r ".message")
+    else
+      return 11
+    fi
+    # download the zip file if not already set
+    if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" ]; then
+      # give message
+      _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
+      curl -s -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip?access_token=${VDM_TOKEN}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
+    else
+      # zip already set
+      _echo "[error] ${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip already set."
+      return 12
+    fi
+  else
+    # get the name
+    VDM_ZIP_NAME="${VDM_MODE}"
+    # get the message
+    VDM_ZIP_MESSAGE="${VDM_MODE}"
+    # download the zip file if not already set
+    if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" ]; then
+      # give message
+      _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
+      # download the zip file
+      curl -s -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip?access_token=${VDM_TOKEN}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
+    else
+      # zip already set
+      _echo "[error] ${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip already set."
+      return 12
+    fi
+  fi
+  # always clear tab bucket
+  unset VDM_API_BUCKET
+  # move the tag values to global scope
+  export VDM_ZIP_NAME
+  export VDM_ZIP_MESSAGE
+  # success
+  return 0
+}
+
+# set the File Details
+function setFile() {
+  # add the file xml details
+  {
+    echo -en '\t\t<file type="'
+    echo -n "${VDM_TYPE}"
+    echo -n '" id="'
+    echo -n "${VDM_ID}"
+    echo -n '"'
+    [[ -n "${VDM_TYPE_KEY}" ]] &&
+      echo -n " ${VDM_TYPE_KEY}=" &&
+      echo -n '"' &&
+      echo -n "${VDM_TYPE_VAL}" &&
+      echo -n '"'
+    echo ">${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip</file>"
+  } >> "${VDM_FILES_XML}"
+  # set the readme list of extensions
+  {
+    echo -n "- [${VDM_OWNER}/${VDM_REPO}]"
+    echo -n "(https://${VDM_URL}/${VDM_OWNER}/${VDM_REPO})"
+    echo " [${VDM_ZIP_NAME}](https://${VDM_URL}/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip)"
+    echo "> ${VDM_ZIP_MESSAGE}"
+  } >> "${VDM_README_FILES_MD}"
+}
+
+# make API call
+function callGiteaAPI() {
+  # the locals
+  local mode="${1}"
+  local owner="${2}"
+  local repo="${3}"
+  local api="${4}"
+  local token="${5}"
+  local zip_packages
+  local message
+  # each time reset
+  unset VDM_API_BUCKET
+  # give message
+  _echo "[info] Getting ${mode} information from ${owner}/${repo} repository."
+  # get the zip packages
+  zip_packages=$(curl -s -X 'GET' "${api}/repos/${owner}/${repo}/${mode}?access_token=${token}" -H 'accept: application/json')
+  # check for error
+  if [[ "${zip_packages}" =~ '"errors"' ]] && [[ "${zip_packages}" =~ '"message"' ]]; then
+    # get the message
+    message=$(echo "${zip_packages}" | jq -r ".message")
+    # check that we have tags (not ideal, but to catch wrong repo path)
+    _echo "[error] failed to get ${mode} from ${owner}/${repo} repository [${message}]."
+    # we an add more later
+    return 12
+  elif [ "${zip_packages}" = '[]' ]; then
+    # check that we have tags (not ideal, but to catch wrong repo path)
+    _echo "[error] failed to get ${mode} from ${owner}/${repo} repository."
+    # we an add more later
+    return 12
+  fi
+  # get the latest
+  VDM_API_BUCKET=$(echo "${zip_packages}" | jq ".[0]")
+  # success
+  export VDM_API_BUCKET
+  # success
+  return 0
+}
+
+# set the package language file and xml
+function setLanguages() {
+  # little information of progress
+  _echo "[info] Loading the Languages..."
+  # make sure its reset
+  echo -e '\t<languages folder="languages">' > "${VDM_LANGUAGES_XML}"
+  # check for errors
+  local has_error
+  # loop over the repos
+  i=0
+  for vdm_lang_tag in $(echo "${VDM_CONFIG_DATA}" | jq -r '.languages[].tag');
+  do
+    # check for errors
+    has_error=false
+    # get the config values needed
+    getConfigValue 'vdm_lang_ini' ".languages[$i].ini" || has_error=true
+    getConfigValue 'vdm_lang_key' ".languages[$i].key" || has_error=true
+    getConfigValue 'vdm_lang_value' ".languages[$i].value" || has_error=true
+    # check if we have some errors already
+    if $has_error; then
+      clearLangEnv
+      continue
+    fi
+    # set file name
+    # shellcheck disable=SC2154
+    language_file_name="${vdm_lang_tag}.${VDM_PACKAGE_NAME,,}.${vdm_lang_ini}"
+    # set file path
+    language_file_path="${VDM_PACKAGE_LANG_DIR}/${vdm_lang_tag}/${language_file_name}"
+    # build the language string
+    # shellcheck disable=SC2154
+    language_string="${vdm_lang_key}="
+    language_string+='"'
+    # shellcheck disable=SC2154
+    language_string+="${vdm_lang_value}"
+    language_string+='"'
+    # create dir for language and add to xml only once
+    if [ ! -d "${VDM_PACKAGE_LANG_DIR}/${vdm_lang_tag}" ]; then
+      # create the language directory
+      mkdir -p "${VDM_PACKAGE_LANG_DIR}/${vdm_lang_tag}"
+    fi
+    # add value to language file
+    if [ -f "${language_file_path}" ]; then
+      echo "${language_string}" >> "${language_file_path}"
+    else
+      # first time
+      echo "${language_string}" > "${language_file_path}"
+      # add to xml
+      setLanguageXml "${vdm_lang_tag}" "${vdm_lang_tag}/${language_file_name}"
+    fi
+    # increment
+    ((i++))
+    # load the Project name to Readme when found
+    # shellcheck disable=SC1090
+    [ "${vdm_lang_tag}" = "${VDM_PACKAGER_LANG}" ] && source "${language_file_path}"
+    # remove values
+    clearLangEnv
+  done
+  # make sure its reset
+  echo -e '\t</languages>' >> "${VDM_LANGUAGES_XML}"
+}
+
+# just to clear all file ENVs
+function clearLangEnv() {
+    # SET IN: setLanguages
+    unset vdm_lang_tag
+    unset vdm_lang_ini
+    unset vdm_lang_key
+    unset vdm_lang_value
+}
+
+# set the Language XML Details
+function setLanguageXml() {
+  # add the file details
+  {
+    echo -en '\t\t<language tag="'
+    echo -n "${1}"
+    echo -n '">'
+    echo -n "${2}"
+    echo '</language>'
+  } >> "${VDM_LANGUAGES_XML}"
+}
+
+# set the Package XML Details
+function setPackageXml() {
+  # little information of progress
+  _echo "[info] Setting the Package XML..."
+  # add the package details
+  {
+    echo '<?xml version="1.0" encoding="utf-8"?>'
+    echo -n '<extension version="'
+    echo -n "${VDM_MIN_JOOMLA_VERSION:-3.8}"
+    echo '" type="package" method="upgrade">'
+    # set the name
+    echo -en '\t<name>'
+    echo -n "${VDM_NAME}"
+    echo '</name>'
+    # set the package name
+    echo -en '\t<packagename>'
+    echo -n "${VDM_CODE_NAME,,}"
+    echo '</packagename>'
+    # set the version
+    echo -en '\t<version>'
+    echo -n "${VDM_PACKAGE_VERSION:-1.0.0}"
+    echo '</version>'
+    # set the creationDate
+    echo -en '\t<creationDate>'
+    echo -n "${CREATION_DATE}"
+    echo '</creationDate>'
+    # set the author
+    echo -en '\t<author>'
+    echo -n "${VDM_AUTHOR}"
+    echo '</author>'
+    # set the authorEmail
+    echo -en '\t<authorEmail>'
+    echo -n "${VDM_AUTHOR_EMAIL}"
+    echo '</authorEmail>'
+    # set the authorUrl
+    echo -en '\t<authorUrl>'
+    echo -n "${VDM_AUTHOR_URL}"
+    echo '</authorUrl>'
+    # set the copyright
+    echo -en '\t<copyright>'
+    echo -n "${VDM_COPYRIGHT}"
+    echo '</copyright>'
+    # set the copyrightyear
+    echo -en '\t<copyrightyear>'
+    echo -n "${VDM_COPYRIGHT_YEAR:-$CREATION_YEAR}"
+    echo '</copyrightyear>'
+    # set the license
+    echo -en '\t<license>'
+    echo -n "${VDM_LICENSE}"
+    echo '</license>'
+    # set the packager
+    echo -en '\t<packager>'
+    echo -n "${VDM_PACKAGER:-$PROGRAM_NAME}"
+    echo '</packager>'
+    # set the packagerurl
+    echo -en '\t<packagerurl>'
+    echo -n "${VDM_PACKAGER_URL:-$PROGRAM_URL}"
+    echo '</packagerurl>'
+    # set the description
+    echo -en '\t<description>'
+    echo -n "${VDM_DESCRIPTION}"
+    echo '</description>'
+    # set the script file if found
+    if [ -n "${VDM_INSTALLATION_FILE}" ]; then
+      echo -en '\t<scriptfile>'
+      echo -n "install_${VDM_CODE_NAME,,}.php"
+      echo '</scriptfile>'
+    fi
+    # set the update server if found
+    if [ -n "${VDM_UPDATE_SERVER}" ]; then
+      echo -e '\t<updateservers>'
+      echo -en '\t\t<server type="extension" name="'
+      [ -n "${!VDM_NAME}" ] && echo -n "${!VDM_NAME}" || echo -n "${VDM_NAME}"
+      echo -n ' - Updates" element="'
+      echo -n "${VDM_PACKAGE_NAME}"
+      echo -n '">'
+      echo -n "${VDM_UPDATE_SERVER}"
+      echo '</server>'
+      echo -e '\t</updateservers>'
+    fi
+    # add the languages
+    cat "${VDM_LANGUAGES_XML}"
+    # add the files
+    cat "${VDM_FILES_XML}"
+    # close the extension xml
+    echo '</extension>'
+  } > "${VDM_PACKAGE_XML}"
+  # remove file no longer needed
+  rm "${VDM_LANGUAGES_XML}"
+  rm "${VDM_FILES_XML}"
+}
+
+# set the package README
+function setReadMe() {
+  # little information of progress
+  _echo "[info] Setting the README..."
+  # add the Project Name to Readme
+  {
+    [ -n "${!VDM_NAME}" ] && echo -n "# ${!VDM_NAME}" || echo -n "# ${VDM_NAME}"
+    # add the version
+    echo " (${VDM_PACKAGE_VERSION:-1.0.0})"
+    echo ""
+    # set the Description
+    reg="[[:space:]]+"
+    if [[ "${VDM_DESCRIPTION}" =~ $reg ]]; then
+      echo "${VDM_DESCRIPTION}"
+    else
+      [ -n "${!VDM_DESCRIPTION}" ] && echo "${!VDM_DESCRIPTION}" || echo "${VDM_DESCRIPTION}"
+    fi
+    echo ""
+    echo "## Details"
+    echo ""
+    echo "- Packager: [${VDM_PACKAGER}](${VDM_PACKAGER_URL})"
+    echo "- Author: [${VDM_AUTHOR}](${VDM_AUTHOR_URL})"
+    echo "- Creation Date: ${CREATION_DATE}"
+    [ -n "${VDM_MAX_JOOMLA_VERSION}" ] && echo "- Max Joomla Version: J${VDM_MAX_JOOMLA_VERSION}"
+    echo "- Minimum Joomla Version: J${VDM_MIN_JOOMLA_VERSION}"
+    echo ""
+    echo "## Extensions"
+    # add the list of extensions
+    cat "${VDM_README_FILES_MD}"
+    echo ""
+    echo "### Copyright (${VDM_COPYRIGHT_YEAR:-$CREATION_YEAR})"
+    echo "> ${VDM_COPYRIGHT}"
+    echo "### License"
+    echo "> ${VDM_LICENSE}"
+    echo ""
+  } > "${VDM_README_MD}"
+  # remove the Readme files build
+  rm "${VDM_README_FILES_MD:?}"
+}
+
+# set the license file
+function setLicenseFile() {
+  local has_error=false
+  # check if the license file is passed via a URL
+  if [[ "${VDM_LICENSE_FILE}" =~ ^"http:" ]] || [[ "${VDM_LICENSE_FILE}" =~ ^"https:" ]]; then
+    # shellcheck disable=SC2143
+    if [[ $(wget -S --spider "${VDM_LICENSE_FILE}" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
+      wget --quiet "${VDM_LICENSE_FILE}" -O "${VDM_LICENSE_FILE_PATH}"
+      VDM_LICENSE_FILE="LICENSE"
+    else
+      echo >&2 "[error] The license:${VDM_LICENSE_FILE} is not a valid URL."
+      has_error=true
+    fi
+  elif [ -f "${LICENSE_DIR}/${VDM_LICENSE_FILE}" ]; then
+    # now copy the license file
+    cp "${LICENSE_DIR}/${VDM_LICENSE_FILE}" "${VDM_LICENSE_FILE_PATH}"
+  else
+    echo >&2 "[error] The license:${LICENSE_DIR}/${VDM_LICENSE_FILE} not found."
+    has_error=true
+  fi
+  # check if we have some errors
+  if $has_error; then
+    return 16
+  fi
+  # little information of progress
+  _echo "[info] Setting the License File..."
+  return 0
+}
+
+# set the install file
+function setInstallFile() {
+  local has_error=false
+  # check if the installation script file is passed via a URL
+  if [[ "${VDM_INSTALLATION_FILE}" =~ ^"http:" ]] || [[ "${VDM_INSTALLATION_FILE}" =~ ^"https:" ]]; then
+    # shellcheck disable=SC2143
+    if [[ $(wget -S --spider "${VDM_INSTALLATION_FILE}" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
+      wget --quiet "${VDM_INSTALLATION_FILE}" -O "${VDM_INSTALL_PHP}"
+    else
+      echo >&2 "[error] The installation script file:${VDM_INSTALLATION_FILE} is not a valid URL."
+      has_error=true
+    fi
+  elif [ -f "${VDM_INSTALLATION_FILE}" ]; then
+    # now copy the installation script file
+    cp "${VDM_INSTALLATION_FILE}" "${VDM_INSTALL_PHP}"
+  fi
+  # check if we have some errors already
+  if $has_error; then
+    return 16
+  fi
+  # little information of progress
+  _echo "[info] Setting the Installation.php File..."
+  return 0
+}
+
+# get the package repository
+function setRepository() {
+	# change to git directory
+	cd "${VDM_PACKAGE_GIT_DIR}" || return 22
+  # check if the repository exist on our gitea instance
+  local update_repo
+  # shellcheck disable=SC2015
+  if git ls-remote "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" -q >/dev/null 2>&1; then
+    getExistingRepository || return 23
+    update_repo=true
+  else
+    setNewRepository || return 24
+    update_repo=false
+  fi
+	# make sure we are in the correct dir and then remove all existing data
+	cd "${VDM_PACKAGE_GIT_DIR}/${VDM_PACKAGE_REPO}" || return 25
+	# remove any existing files and folders from repository
+	rm -rf -- * || return 26
+	# move all new files into repository
+	setRepositoryNewFiles || return 27
+	# check if we have changes
+	if $update_repo && [[ -z $(git status --porcelain) ]]; then
+	  _echo "[info] No changes found in (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+	else
+	  # check if we must update or create repository
+	  if $update_repo; then
+      # make API call
+      callGiteaAPI "tags" "${VDM_PACKAGE_OWNER}" "${VDM_PACKAGE_REPO}" "${VDM_PACKAGE_API}" "${VDM_PACKAGE_TOKEN}" || return 28
+      # get the name
+      if [ -n "${VDM_API_BUCKET}" ]; then
+        version_name=$(echo "${VDM_API_BUCKET}" | jq -r ".name")
+      else
+        return 28
+      fi
+	    # get the repository last tag
+	    makeGitCommit "Update - ${VDM_PACKAGE_VERSION:-1.0.0}" "${VDM_PACKAGE_VERSION:-1.0.0}" "${version_name}" || return 28
+	    # give little notice of progress
+	    _echo "[info] Pushing changes to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+	    # make a normal push update
+	    git push >/dev/null 2>&1 || return 30
+	    git push --tags >/dev/null 2>&1 || return 30
+	  else
+	    # create new repo
+	    setGitRepository || return 29
+	    # give little notice of progress
+	    _echo "[info] Pushing (TO CREATE) changes to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+	    # push to creat the repository (if allowed)
+	    git push -u origin master >/dev/null 2>&1 || return 30
+	    git push --tags >/dev/null 2>&1 || return 30
+	  fi
+	fi
+	# success
+	return 0
+}
+
+# get the existing repository
+function getExistingRepository() {
+  # little information of progress
+	_echo "[info] Getting (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+	# clone the existing repository
+	git clone "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
+	# success
+	return 0
+}
+
+# set the new repository
+function setNewRepository() {
+  # little information of progress
+	_echo "[info] Creating (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) folder"
+  # check if the repository exist on our gitea instance
+  mkdir -p "${VDM_PACKAGE_GIT_DIR}/${VDM_PACKAGE_REPO}" || return 24
+  # success
+  return 0
+}
+
+# set new git repository
+function setGitRepository() {
+  # little information of progress
+	_echo "[info] Initializing the (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+  # initialize the repository
+  git init >/dev/null 2>&1 || return 29
+  # add the first commit
+  makeGitCommit "First Commit - ${VDM_PACKAGE_VERSION:-1.0.0}" "${VDM_PACKAGE_VERSION:-1.0.0}" >/dev/null 2>&1 || return 28
+  # little information of progress
+	_echo "[info] Adding remote branch to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+  # add the remote branch
+  git remote add origin "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 29
+  #success
+  return 0
+}
+
+# make the git commit
+function makeGitCommit() {
+  # add all (or remove)
+	git add .  >/dev/null 2>&1 || return 28
+  # little information of progress
+	_echo "[info] Committing (${1}) to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+	# set the commit message
+	git commit -am"${1}" >/dev/null 2>&1 || return 28
+	# check if the tag should be added
+	if [ "${2:-error}" != "error" ] && [ "${2:-error}" != "${3:-none}" ]; then
+    # little information of progress
+    _echo "[info] Adding TAG (${2}) to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+    # add the new tag
+    git tag "${2}" >/dev/null 2>&1 || return 28
+	fi
+	# success
+	return 0
+}
+
+# add all the new files to the repository
+function setRepositoryNewFiles() {
+  # little information of progress
+  _echo "[info] Moving new files into the (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) directory"
+  _echo "[info] Removing the ${VDM_PACKAGE_DIR:?} directory"
+  # move all the new files
+  if [ -d "${VDM_PACKAGE_DIR}" ]; then
+    mv "${VDM_PACKAGE_DIR:?}/"* "${VDM_PACKAGE_GIT_DIR}/${VDM_PACKAGE_REPO}" >/dev/null 2>&1 &&
+      rm -rf "${VDM_PACKAGE_DIR:?}" >/dev/null 2>&1 ||
+      return 27
+  else
+    return 27
+  fi
+  # success
+  return 0
+}
+
+# give the echo messages
+# only if not set to be quiet
+function _echo() {
+  if (("$QUIET" == 0)); then
+    echo "$1"
+  fi
+}
+
+# remove the program if installed
+function runUninstall() {
+  # now remove the script
+  if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
+    sudo rm -f "/usr/local/bin/${PROGRAM_CODE}"
+    echo "[info] ${PROGRAM_NAME} v${PROGRAM_VERSION} has been completely uninstalled."
+  else
+    echo "[info] ${PROGRAM_NAME} v${PROGRAM_VERSION} is not installed."
+  fi
+}
+
+# update the script with the latest version
+function runUpdate() {
+  # remove the current version
+  if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
+    # just backup in case of failure
+    sudo mv "/usr/local/bin/${PROGRAM_CODE}" "/usr/local/bin/${PROGRAM_CODE}.bak"
+  fi
+  # pull the latest version. Master is always the latest
+  if sudo curl --fail -L "https://git.vdm.dev/api/v1/repos/octoleo/${PROGRAM_CODE}/raw/src/${PROGRAM_CODE}?ref=${branch:-master}" -o "/usr/local/bin/${PROGRAM_CODE}" 2>/dev/null; then
+    # give success message
+    echo "[success] Update was successful."
+    # do we have a backup
+    if [ -f "/usr/local/bin/${PROGRAM_CODE}.bak" ]; then
+      # lets remove it now
+      sudo rm -f "/usr/local/bin/${PROGRAM_CODE}.bak"
+    fi
+  else
+    # show the error
+    echo >&2 "[error] Update failed! Please try again later."
+    # do we have a backup
+    if [ -f "/usr/local/bin/${PROGRAM_CODE}.bak" ]; then
+      # move backup back
+      sudo mv "/usr/local/bin/${PROGRAM_CODE}.bak" "/usr/local/bin/${PROGRAM_CODE}"
+    fi
+  fi
+  # always set the permission again if we have a file
+  if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
+    # the we make sure its executable
+    sudo chmod +x "/usr/local/bin/${PROGRAM_CODE}"
+  fi
+  # always exit so the new script can load
+  exit 0
+}
+
+# help message ʕ•ᴥ•ʔ
+function show_help() {
+  cat <<EOF
+Usage: ${PROGRAM_CODE} [OPTION...]
+	Options
+	======================================================
+   -p | --packager=<packager Name>
+	Packager name
+	example: ${PROGRAM_CODE} -p="Vast Development Method"
+	======================================================
+   -pu | --packager-url=<//packager.url>
+	Packager url
+	example: ${PROGRAM_CODE} -pu="https://git.vdm.dev/"
+	======================================================
+   -e | --env=<file>
+	load the environment variables file
+	example: ${PROGRAM_CODE} --env=/src/.env
+	======================================================
+   --conf | --config=<path>
+	load the configuration for the package in json format
+	   file-example: src/example.json
+	example: ${PROGRAM_CODE} --config=config.json
+	======================================================
+   -t | --token=<access_token>
+	load the global token
+	example: ${PROGRAM_CODE} --token=xxxxxxxxxxxxxxxxxxxxxxxxx
+	======================================================
+   -u | --url=<gitea>
+	Global url of the Gitea instance
+	example: ${PROGRAM_CODE} --url="git.vdm.dev"
+	======================================================
+   -a | --api=<//gitea.api>
+	Global api of the Gitea instance
+	example: ${PROGRAM_CODE} --api="https://git.vdm.dev/api/v1"
+	======================================================
+   -q | --quiet
+	mute all output messages
+	example: ${PROGRAM_CODE} --quiet
+	======================================================
+   --update
+	to update your install
+	example: ${PROGRAM_CODE} --update
+	======================================================
+   --uninstall
+	to uninstall this script
+	example: ${PROGRAM_CODE} --uninstall
+	======================================================
+   -h|--help
+	display this help menu
+	example: ${PROGRAM_CODE} -h
+	example: ${PROGRAM_CODE} --help
+	======================================================
+			${PROGRAM_NAME} v${PROGRAM_VERSION}
+	======================================================
+EOF
+}
+
+# SET THE DEFAULTS #####################################
+# get start time
+# shellcheck disable=SC2034
+START_BUILD=$(date +"%s")
+# use UTC+00:00 time also called zulu
+# shellcheck disable=SC2034
+START_DATE=$(TZ=":ZULU" date +"%m/%d/%Y @ %R (UTC)")
+CREATION_DATE=$(TZ=":ZULU" date +"%B %Y")
+CREATION_YEAR=$(TZ=":ZULU" date +"%Y")
+# the quiet switch
+QUIET="${QUIET:-0}"
+# we set the packager directory
+tmp_path="/home/$USER/${PROGRAM_CODE}"
+PACKAGE_DIR="${PACKAGE_DIR:-$tmp_path}"
+# we set the licenses directory
+tmp_path="/home/$USER/${PROGRAM_CODE}/licenses"
+LICENSE_DIR="${LICENSE_DIR:-$tmp_path}"
+# the environment variables path
+tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.env"
+VDM_ENV_FILE_PATH="${VDM_ENV_FILE_PATH:-$tmp_path}"
+# car this tmp out
+unset tmp_path
+
+# check if we have options
+while :; do
+  case $1 in
+  -h | --help)
+    show_help # Display a usage synopsis.
+    exit
+    ;;
+  -q | --quiet)
+    QUIET=1
+    ;;
+  --uninstall)
+    runUninstall
+    shift
+    ;;
+  --update)
+    runUpdate
+    shift
+    ;;
+  -e | --env) # Takes an option argument; ensure it has been specified.
+    if [ "$2" ]; then
+      VDM_ENV_FILE_PATH=$2
+      shift
+    else
+      echo '[error] "--env" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  -e=?* | --env=?*)
+    VDM_ENV_FILE_PATH=${1#*=} # Delete everything up to "=" and assign the remainder.
+    ;;
+  -e= | --env=) # Handle the case of an empty --packages=
+    echo '[error] "--env=" requires a non-empty option argument.'
+    exit 17
+    ;;
+  --conf | --config) # Takes an option argument; ensure it has been specified.
+    if [ "$2" ]; then
+      VDM_PACKAGE_CONF_FILE=$2
+      shift
+    else
+      echo '[error] "--conf" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  --conf=?* | --config=?*)
+    VDM_PACKAGE_CONF_FILE=${1#*=} # Delete everything up to "=" and assign the remainder.
+    ;;
+  --conf= | --config=) # Handle the case of an empty --packages=
+    echo '[error] "--conf=" requires a non-empty option argument.'
+    exit 17
+    ;;
+  -p | --packager) # Takes an option argument; ensure it has been specified.
+    if [ "$2" ]; then
+      VDM_PACKAGER=$2
+      shift
+    else
+      echo '[error] "--packager" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  -p=?* | --packager=?*)
+    VDM_PACKAGER=${1#*=} # Delete everything up to "=" and assign the remainder.
+    ;;
+  -p= | --packager=) # Handle the case of an empty --packages=
+    echo '[error] "--packager=" requires a non-empty option argument.'
+    exit 17
+    ;;
+  -pu | --packager-url) # Takes an option argument; ensure it has been specified.
+    if [ "$2" ]; then
+      VDM_PACKAGER_URL=$2
+      shift
+    else
+      echo '[error] "--packager-url" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  -pu=?* | --packager-url=?*)
+    VDM_PACKAGER_URL=${1#*=} # Delete everything up to "=" and assign the remainder.
+    ;;
+  -pu= | --packager-url=) # Handle the case of an empty --packager-url=
+    echo '[error] "--packager-url=" requires a non-empty option argument.'
+    exit 17
+    ;;
+  -t | --token) # Takes an option argument; ensure it has been specified.
+    if [ "$2" ]; then
+      VDM_GLOBAL_TOKEN=$2
+      shift
+    else
+      echo '[error] "--token" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  -t=?* | --token=?*)
+    # shellcheck disable=SC2034
+    VDM_GLOBAL_TOKEN=${1#*=} # Delete everything up to "=" and assign the remainder.
+    ;;
+  -t= | --token=) # Handle the case of an empty --packages=
+    echo '[error] "--token=" requires a non-empty option argument.'
+    exit 17
+    ;;
+  -a | --api) # Takes an option argument; ensure it has been specified.
+    if [ "$2" ]; then
+      VDM_GLOBAL_API=$2
+      shift
+    else
+      echo '[error] "--api" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  -a=?* | --api=?*)
+    # shellcheck disable=SC2034
+    VDM_GLOBAL_API=${1#*=} # Delete everything up to "=" and assign the remainder.
+    ;;
+  -a= | --api=) # Handle the case of an empty --packages=
+    echo '[error] "--api=" requires a non-empty option argument.'
+    exit 17
+    ;;
+  -u | --url) # Takes an option argument; ensure it has been specified.
+    if [ "$2" ]; then
+      VDM_GLOBAL_URL=$2
+      shift
+    else
+      echo '[error] "--url" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  -u=?* | --url=?*)
+    # shellcheck disable=SC2034
+    VDM_GLOBAL_URL=${1#*=} # Delete everything up to "=" and assign the remainder.
+    ;;
+  -u= | --url=) # Handle the case of an empty --packages=
+    echo '[error] "--url=" requires a non-empty option argument.'
+    exit 17
+    ;;
+  *) # Default case: No more options, so break out of the loop.
+    break ;;
+  esac
+  shift
+done
+
+# load local environment variables
+# shellcheck disable=SC1090
+[ -f "${VDM_ENV_FILE_PATH}" ] && source "${VDM_ENV_FILE_PATH}"
+
+# check if the config is passed via a URL
+if [[ "${VDM_PACKAGE_CONF_FILE}" =~ ^"http:" ]] || [[ "${VDM_PACKAGE_CONF_FILE}" =~ ^"https:" ]]; then
+  # shellcheck disable=SC2143
+  if [[ $(wget -S --spider "${VDM_PACKAGE_CONF_FILE}" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
+    mkdir -p "/home/$USER/.config/${PROGRAM_CODE}"
+    wget --quiet "${VDM_PACKAGE_CONF_FILE}" -O "/home/$USER/.config/${PROGRAM_CODE}/conf.json"
+    VDM_PACKAGE_CONF_FILE="/home/$USER/.config/${PROGRAM_CODE}/conf.json"
+  else
+    echo >&2 "[error] The config:${VDM_PACKAGE_CONF_FILE} is not a valid URL. Aborting."
+    exit 18
+  fi
+fi
+
+# make sure whe have a configuration file
+[ -f "${VDM_PACKAGE_CONF_FILE}" ] || {
+    echo >&2 "[error] The config:${VDM_PACKAGE_CONF_FILE:-empty_value} could not be found. Aborting."
+    exit 18
+}
+
+# run Main ┬┴┬┴┤(･_├┬┴┬┴
+main
+
+exit 0

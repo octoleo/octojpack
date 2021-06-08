@@ -1,0 +1,197 @@
+{
+  "global": {
+    "packager": "Vast Development Method",
+    "packager_url": "https://dev.vdm.io/",
+    "url": "git.vdm.dev",
+    "api": "https://git.vdm.dev/api/v1"
+  },
+  "package": {
+    "name": "PKG_COMPONENT_BUILDER_PRO",
+    "code_name": "component_builder_pro",
+    "package_name": "pkg_component_builder_pro",
+    "min_joomla_version": "3.8",
+    "max_joomla_version": "3.10",
+    "copyright": "Copyright (C) 2015 Llewellyn van der Merwe. All rights reserved.",
+    "copyright_year": "2015",
+    "license": "GNU General Public License version 2; see LICENSE",
+    "license_file": "LICENSE",
+    "author": "Llewellyn van der Merwe",
+    "author_email": "joomla@vdm.io",
+    "author_url": "https://io.vdm.dev",
+    "description": "The Joomla Component Builder Package (PRO) that bundles JCB Pro Component all the plugins and features available to Pro Members into one package for easy install and update of your JCB system.",
+    "update_servers": "https://io.vdm.dev/update/componentbuilder_update_server.xml",
+    "version_id": "com_componentbuilder"
+  },
+  "repository": {
+    "owner": "joomla",
+    "repo": "pkg-component-builder-pro"
+  },
+  "files": [
+    {
+      "owner": "joomla",
+      "repo": "Component-Builder-Pro",
+      "id": "com_componentbuilder",
+      "type": "component",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_installer_componentbuilder",
+      "id": "ComponentBuilder",
+      "type": "plugin",
+      "group": "installer",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_content_componentbuilderadminheaderstabs",
+      "id": "ComponentBuilderAdminHeadersTabs",
+      "type": "plugin",
+      "group": "content",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_content_componentbuildercomponentdashboardheaderstabs",
+      "id": "ComponentBuilderComponentDashboardHeadersTabs",
+      "type": "plugin",
+      "group": "content",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_content_componentbuildercomponentheaderstabs",
+      "id": "ComponentBuilderComponentHeadersTabs",
+      "type": "plugin",
+      "group": "content",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_content_componentbuildercustomadminheaderstabs",
+      "id": "ComponentBuilderCustomAdminHeadersTabs",
+      "type": "plugin",
+      "group": "content",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_content_componentbuilderfieldorderingtabs",
+      "id": "ComponentBuilderFieldOrderingTabs",
+      "type": "plugin",
+      "group": "content",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_content_componentbuilderlanguagetabs",
+      "id": "ComponentBuilderLanguageTabs",
+      "type": "plugin",
+      "group": "content",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_content_componentbuilderprivacytabs",
+      "id": "ComponentBuilderPrivacyTabs",
+      "type": "plugin",
+      "group": "content",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_content_componentbuildersiteheaderstabs",
+      "id": "ComponentBuilderSiteHeadersTabs",
+      "type": "plugin",
+      "group": "content",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_extension_componentbuilderactionlogcompiler",
+      "id": "ComponentBuilderActionLogCompiler",
+      "type": "plugin",
+      "group": "extension",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_extension_componentbuilderexportcompiler",
+      "id": "ComponentBuilderExportCompiler",
+      "type": "plugin",
+      "group": "extension",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_extension_componentbuilderfieldorderingcompiler",
+      "id": "ComponentBuilderFieldOrderingCompiler",
+      "type": "plugin",
+      "group": "extension",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_extension_componentbuilderheaderscompiler",
+      "id": "ComponentBuilderHeadersCompiler",
+      "type": "plugin",
+      "group": "extension",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_extension_componentbuilderlanguagepackaging",
+      "id": "ComponentBuilderLanguagePackaging",
+      "type": "plugin",
+      "group": "extension",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_extension_componentbuilderpowersautoloadercompiler",
+      "id": "ComponentBuilderPowersAutoloaderCompiler",
+      "type": "plugin",
+      "group": "extension",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    },
+    {
+      "owner": "joomla",
+      "repo": "plg_extension_componentbuilderprivacycompiler",
+      "id": "ComponentBuilderPrivacyCompiler",
+      "type": "plugin",
+      "group": "extension",
+      "token_name": "VDM_GLOBAL_TOKEN",
+      "api_name": "VDM_GLOBAL_API"
+    }
+  ],
+  "languages": [
+    {
+      "tag": "en-GB",
+      "ini": "sys.ini",
+      "key": "PKG_COMPONENT_BUILDER_PRO",
+      "value": "Component Builder Pro Package"
+    },
+    {
+      "tag": "en-GB",
+      "ini": "ini",
+      "key": "PKG_COMPONENT_BUILDER_PRO",
+      "value": "Component Builder Pro Package"
+    }
+  ]
+}
