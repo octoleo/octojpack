@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.0.0"
+PROGRAM_VERSION="1.0.1"
 PROGRAM_V="1.0"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -1055,9 +1055,13 @@ tmp_path="/home/$USER/${PROGRAM_CODE}"
 PACKAGE_DIR="${PACKAGE_DIR:-$tmp_path}"
 # we set the licenses directory
 tmp_path="/home/$USER/${PROGRAM_CODE}/licenses"
+# if path not set try $PWD path
+[ -d "$tmp_path" ] || tmp_path="$PWD"
 LICENSE_DIR="${LICENSE_DIR:-$tmp_path}"
 # the environment variables path
 tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.env"
+# if path not set try $PWD path
+[ -f "$tmp_path" ] || tmp_path="$PWD/.env"
 VDM_ENV_FILE_PATH="${VDM_ENV_FILE_PATH:-$tmp_path}"
 # car this tmp out
 unset tmp_path
@@ -1204,6 +1208,10 @@ done
 # load local environment variables
 # shellcheck disable=SC1090
 [ -f "${VDM_ENV_FILE_PATH}" ] && source "${VDM_ENV_FILE_PATH}"
+
+# if path not set try $PWD path (so you can open a folder that has .octojpack file and it will be loaded)
+tmp_path="$PWD/.${PROGRAM_CODE}"
+VDM_PACKAGE_CONF_FILE="${VDM_PACKAGE_CONF_FILE:-$tmp_path}"
 
 # check if the config is passed via a URL
 if [[ "${VDM_PACKAGE_CONF_FILE}" =~ ^"http:" ]] || [[ "${VDM_PACKAGE_CONF_FILE}" =~ ^"https:" ]]; then
