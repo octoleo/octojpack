@@ -217,22 +217,37 @@ function clearFiles() {
 
 # get value from config
 function getConfigValue() {
+  # with config values we only try to load it
+  # if it is not already set
+  # so if we find that it is set
+  # we're done search
+  [ -n "${!1}" ] && return 0
   # get what we can from the config if not already set in the .env file
   # so to set the value globally use the .env option
   # to set per project use the config file of the project
+  getValueFromJson "$1" "$2" || {
+    # give little heads-up if not blocked
+    "${3:-true}"  && echo >&2 "[error] We require ($2) for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in $VDM_PACKAGE_CONF_FILE."
+    # we had no success
+    return 19
+  }
+  # success
+  return 0
+}
+
+function getValueFromJson() {
   # some local values
   local value_key
+  local json
   # load the values
   value_key="${2}"
-  # if has a value we are done
-  [ -n "${!1}" ] && return 0
+  # load the json object
+  json="${3:-$VDM_CONFIG_DATA}"
   # get the value
   # shellcheck disable=SC2034
-  val=$(echo "${VDM_CONFIG_DATA}" | jq -r "$value_key")
+  val=$(echo "${json}" | jq -r "$value_key")
   # check the value not to be null
   [ "${val}" = 'null' ] && {
-    # give little heads-up if not blocked
-    "${3:-true}"  && echo >&2 "[error] We require ($value_key) for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in $VDM_PACKAGE_CONF_FILE."
     # we had no success
     return 19
   }
@@ -303,7 +318,7 @@ function setFiles() {
   local has_error=false
   local has_files=false
   # loop over the repos
-  i=0
+  local i=0
   for owner in $(echo "${VDM_CONFIG_DATA}" | jq -r '.files[].owner');
   do
     # get the config values needed
@@ -319,6 +334,8 @@ function setFiles() {
     # check if we have some errors already
     if $has_error; then
       clearFileEnv
+      # increment
+      ((i++))
       continue
     fi
     getConfigValue 'VDM_TOKEN_NAME' ".files[$i].token_name" false || VDM_TOKEN_NAME="VDM_GLOBAL_TOKEN"
@@ -346,6 +363,8 @@ function setFiles() {
     # check if we have some errors already
     if $has_error; then
       clearFileEnv
+      # increment
+      ((i++))
       continue
     fi
     # set the URL
@@ -365,8 +384,6 @@ function setFiles() {
     export VDM_URL
     # get this zip packages
     if getZipFile; then
-      # set the xml details for this package
-      setFile
       # check if this is the package version ID
       if [ -n "${VDM_PACKAGE_VERSION_ID}" ] &&
         [ -z "${VDM_PACKAGE_VERSION}" ] &&
@@ -409,70 +426,179 @@ function clearFileEnv() {
     unset VDM_URL_NAME
     unset VDM_URL
     unset VDM_MODE
-    # SET IN: getZipFile
+    # SET IN: getFileByKey || getFileByRelease || getFileByTag
     unset VDM_ZIP_NAME
     unset VDM_ZIP_MESSAGE
+    unset VDM_RELEASE_ID
+    unset VDM_ASSET_ID
+    unset VDM_ASSET_DOWNLOAD
 }
 
 # get the repository zip package
 function getZipFile() {
-  # reset the zip details
-  VDM_ZIP_NAME=''
-  VDM_ZIP_MESSAGE=''
   # check the mode
   if [ "${VDM_MODE}" = 'tags' ] || [ "${VDM_MODE}" = 'releases' ]; then
     # make API call
     callGiteaAPI "${VDM_MODE}" "${VDM_OWNER}" "${VDM_REPO}" "${VDM_API}" "${VDM_TOKEN}" || return 11
-    # get the name
-    if [ -n "${VDM_API_BUCKET}" ]; then
-      VDM_ZIP_NAME=$(echo "${VDM_API_BUCKET}" | jq -r ".name")
+    # check the mode and availability
+    if [ -n "${VDM_API_BUCKET}" ] && [ "${VDM_MODE}" = 'tags' ]; then
+      # get file by tag
+      getFileByTag || return 11
+    elif [ -n "${VDM_API_BUCKET}" ] && [ "${VDM_MODE}" = 'releases' ]; then
+      # get file by release
+      getFileByRelease || return 11
     else
       return 11
-    fi
-    # get the message
-    if [ -n "${VDM_API_BUCKET}" ]; then
-      VDM_ZIP_MESSAGE=$(echo "${VDM_API_BUCKET}" | jq -r ".message")
-    else
-      return 11
-    fi
-    # download the zip file if not already set
-    if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" ]; then
-      # give message
-      _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
-      curl -s -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip?access_token=${VDM_TOKEN}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
-    else
-      # zip already set
-      _echo "[error] ${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip already set."
-      return 12
     fi
   else
-    # get the name
-    VDM_ZIP_NAME="${VDM_MODE}"
-    # get the message
-    VDM_ZIP_MESSAGE="${VDM_MODE}"
-    # download the zip file if not already set
-    if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" ]; then
-      # give message
-      _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
-      # download the zip file
-      curl -s -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip?access_token=${VDM_TOKEN}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
-    else
-      # zip already set
-      _echo "[error] ${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip already set."
-      return 12
-    fi
+    # get the file by key/branch/tag
+    getFileByKey || return 11
   fi
-  # always clear tab bucket
-  unset VDM_API_BUCKET
-  # move the tag values to global scope
-  export VDM_ZIP_NAME
-  export VDM_ZIP_MESSAGE
   # success
   return 0
 }
 
-# set the File Details
-function setFile() {
+# get the file by tag
+function getFileByTag() {
+  # get the name
+  getValueFromJson "VDM_ZIP_NAME" ".name" "${VDM_API_BUCKET}" || {
+    _echo "[error] Tag name not found in VDM_API_BUCKET."
+    return 12
+  }
+  # get the message
+  getValueFromJson "VDM_ZIP_MESSAGE" ".message" "${VDM_API_BUCKET}" || {
+    _echo "[error] Tag message not found in VDM_API_BUCKET."
+    return 12
+  }
+  # download the zip file if not already set
+  if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" ]; then
+    # give message
+    _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
+    curl -s -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip?access_token=${VDM_TOKEN}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
+  else
+    # zip already set
+    _echo "[error] ${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip already set."
+    return 12
+  fi
+  # add file to xml
+  setFileToXML
+  # update the readme
+  setFileToREADME
+  # success
+  return 0
+}
+
+# get the file by tag
+function getFileByRelease() {
+  # check that we got some file
+  local has_files=false
+  local i=0
+  # get the name
+  getValueFromJson "VDM_ZIP_NAME" ".tag_name" "${VDM_API_BUCKET}" || {
+    _echo "[error] Release name not found in VDM_API_BUCKET."
+    return 12
+  }
+  # get the message
+  getValueFromJson "VDM_ZIP_MESSAGE" ".name" "${VDM_API_BUCKET}" || {
+    _echo "[error] Release message not found in VDM_API_BUCKET."
+    return 12
+  }
+  # we may have multiple assets (but we only load the first ZIP file we get)
+  # because we can only have the ${VDM_ID} only once in the xml file
+  for asset_zip_file_name in $(echo "${VDM_API_BUCKET}" | jq -r '.assets[].name');
+  do
+    # make sure we did not already get a file
+    $has_files && {
+      # increment
+      ((i++))
+      continue
+    }
+    # we only work with zip files for now
+    [[ "$asset_zip_file_name" == *".zip" ]] || {
+      # increment
+      ((i++))
+      continue
+    }
+    # download the zip file if not already set
+    if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${asset_zip_file_name}" ]; then
+      # get download link
+      getValueFromJson "VDM_ASSET_DOWNLOAD" ".assets[$i].browser_download_url" "${VDM_API_BUCKET}" || {
+        _echo "[error] Asset [$i].browser_download_url for (${asset_zip_file_name}) not found in VDM_API_BUCKET."
+        # increment
+        ((i++))
+        continue
+      }
+      # give message
+      _echo "[info] Downloading the (${VDM_OWNER}-${asset_zip_file_name}) package."
+      curl -s -L "${VDM_ASSET_DOWNLOAD}?access_token=${VDM_TOKEN}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${asset_zip_file_name}"
+      # so we got a file
+      has_files=true
+      # add to xml file
+      setFileToXML "${VDM_OWNER}__${asset_zip_file_name}"
+      # update the readme
+      setFileToREADME "${VDM_ZIP_NAME}" "${VDM_ASSET_DOWNLOAD}"
+    else
+      # zip already set
+      _echo "[notice] ${VDM_OWNER}__${asset_zip_file_name} already set."
+    fi
+    # increment
+    ((i++))
+  done
+  # check if we got a file
+  $has_files || return 12
+  # success
+  return 0
+}
+
+# get the file by tag
+function getFileByKey() {
+  # get the name
+  VDM_ZIP_NAME="${VDM_MODE}"
+  # get the message
+  VDM_ZIP_MESSAGE="${VDM_MODE}"
+  # download the zip file if not already set
+  if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" ]; then
+    # give message
+    _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
+    # download the zip file
+    curl -s -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip?access_token=${VDM_TOKEN}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
+  else
+    # zip already set
+    _echo "[error] ${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip already set."
+    return 12
+  fi
+  # move the tag values to global scope
+  export VDM_ZIP_NAME
+  export VDM_ZIP_MESSAGE
+  # add file to xml
+  setFileToXML
+  # update the readme
+  setFileToREADME
+  # success
+  return 0
+}
+
+# set the File Details to XML
+function setFileToREADME() {
+  local tmp_zip_name="${VDM_ZIP_NAME}"
+  local zip_name="${1:-$tmp_zip_name}"
+  local tmp_zip_url="https://${VDM_URL}/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip"
+  local zip_url="${2:-$tmp_zip_url}"
+  local tmp_message="${VDM_ZIP_MESSAGE}"
+  local message="${3:-$tmp_message}"
+  # set the readme list of extensions
+  {
+    echo -n "- [${VDM_OWNER}/${VDM_REPO}]"
+    echo -n "(https://${VDM_URL}/${VDM_OWNER}/${VDM_REPO})"
+    echo " [${zip_name}](${zip_url})"
+    echo "> ${message}"
+  } >> "${VDM_README_FILES_MD}"
+}
+
+# set the File Details to XML
+function setFileToXML() {
+  local tmp_zip_name="${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
+  local zip_name="${1:-$tmp_zip_name}"
   # add the file xml details
   {
     echo -en '\t\t<file type="'
@@ -485,15 +611,8 @@ function setFile() {
       echo -n '"' &&
       echo -n "${VDM_TYPE_VAL}" &&
       echo -n '"'
-    echo ">${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip</file>"
+    echo ">$zip_name</file>"
   } >> "${VDM_FILES_XML}"
-  # set the readme list of extensions
-  {
-    echo -n "- [${VDM_OWNER}/${VDM_REPO}]"
-    echo -n "(https://${VDM_URL}/${VDM_OWNER}/${VDM_REPO})"
-    echo " [${VDM_ZIP_NAME}](https://${VDM_URL}/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip)"
-    echo "> ${VDM_ZIP_MESSAGE}"
-  } >> "${VDM_README_FILES_MD}"
 }
 
 # make API call
@@ -793,7 +912,7 @@ function setInstallFile() {
     # now copy the installation script file
     cp "${VDM_INSTALLATION_FILE}" "${VDM_INSTALL_PHP}"
   fi
-  # check if we have some errors already
+  # check if we have some errors
   if $has_error; then
     return 16
   fi
@@ -836,8 +955,14 @@ function setRepository() {
       else
         return 28
       fi
+      # set update message
+      if [ "${VDM_PACKAGE_VERSION:-1.0.0}" != "${version_name}" ]; then
+        message="Update - ${VDM_PACKAGE_VERSION:-1.0.0}"
+      else
+        message="Update"
+      fi
 	    # get the repository last tag
-	    makeGitCommit "Update - ${VDM_PACKAGE_VERSION:-1.0.0}" "${VDM_PACKAGE_VERSION:-1.0.0}" "${version_name}" || return 28
+	    makeGitCommit "${message}" "${VDM_PACKAGE_VERSION:-1.0.0}" "${version_name}" || return 28
 	    # give little notice of progress
 	    _echo "[info] Pushing changes to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
 	    # make a normal push update
