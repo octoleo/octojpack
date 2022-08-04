@@ -931,7 +931,7 @@ function setRepository() {
   # check if the repository exist on our gitea instance
   local update_repo
   # shellcheck disable=SC2015
-  if git ls-remote "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" -q >/dev/null 2>&1; then
+  if git ls-remote "ssh://git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" -q >/dev/null 2>&1; then
     getExistingRepository || return 23
     update_repo=true
   else
@@ -990,7 +990,7 @@ function getExistingRepository() {
   # little information of progress
 	_echo "[info] Getting (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
 	# clone the existing repository
-	git clone "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
+	git clone "ssh://git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
 	# success
 	return 0
 }
@@ -1016,7 +1016,7 @@ function setGitRepository() {
   # little information of progress
 	_echo "[info] Adding remote branch to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
   # add the remote branch
-  git remote add origin "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 29
+  git remote add origin "ssh://git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 29
   #success
   return 0
 }
