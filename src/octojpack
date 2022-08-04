@@ -23,9 +23,15 @@ command -v jq >/dev/null 2>&1 || {
 
 # main function ˘Ô≈ôﺣ
 function main() {
-  # get the package details
+  # check if we have project overides for the environment variables
   # shellcheck disable=SC2015
-  [ -f "$VDM_PACKAGE_CONF_FILE" ] && getPackageDetails || {
+  [ -f "$VDM_PACKAGE_CONF_FILE" ] && getProjectEnvironment || {
+    echo >&2 "[error] We require config file with correct packaging details for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
+    clearMainEnv
+    exit 1
+  }
+  # get the package details
+  getPackageDetails || {
     echo >&2 "[error] We require config file with correct packaging details for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
     clearMainEnv
     exit 1
@@ -78,52 +84,43 @@ function main() {
 
 # set the package details
 function getPackageDetails() {
-  # load the config data
-  VDM_CONFIG_DATA=$(cat "$VDM_PACKAGE_CONF_FILE")
-  # make sure we have package details
-  if [[ "${VDM_CONFIG_DATA}" =~ '"package"' ]] && [[ "${VDM_CONFIG_DATA}" =~ '"files"' ]]; then
-    # little information of progress
-    _echo "[info] Loading the Package Details..."
-    # make configuration globally available
-    export VDM_CONFIG_DATA
-    # check for errors
-    local has_error=false
-    # get the global config values if not set
-    getConfigValue 'VDM_PACKAGER' '.global.packager' false || VDM_PACKAGER="${PROGRAM_NAME} v${PROGRAM_V}"
-    getConfigValue 'VDM_PACKAGER_URL' '.global.packager_url' false || VDM_PACKAGER_URL="${PROGRAM_URL}"
-    getConfigValue 'VDM_PACKAGER_LANG' '.global.language' false || VDM_PACKAGER_LANG="en-GB"
-    getConfigValue 'VDM_GLOBAL_TOKEN' '.global.token' || has_error=true
-    getConfigValue 'VDM_GLOBAL_API' '.global.api' || has_error=true
-    getConfigValue 'VDM_GLOBAL_URL' '.global.url' || has_error=true
-    # check if we have some errors already
-    $has_error && return 13
+  # little information of progress
+  _echo "[info] Loading the Package Details..."
+  # make configuration globally available
+  export VDM_CONFIG_DATA
+  # check for errors
+  local has_error=false
+  # get the global config values if not set
+  getConfigValue 'VDM_PACKAGER' '.global.packager' false || VDM_PACKAGER="${PROGRAM_NAME} v${PROGRAM_V}"
+  getConfigValue 'VDM_PACKAGER_URL' '.global.packager_url' false || VDM_PACKAGER_URL="${PROGRAM_URL}"
+  getConfigValue 'VDM_PACKAGER_LANG' '.global.language' false || VDM_PACKAGER_LANG="en-GB"
+  getConfigValue 'VDM_GLOBAL_TOKEN' '.global.token' || has_error=true
+  getConfigValue 'VDM_GLOBAL_API' '.global.api' || has_error=true
+  getConfigValue 'VDM_GLOBAL_URL' '.global.url' || has_error=true
+  # check if we have some errors already
+  $has_error && return 13
 
-    # package related details
-    getConfigValue 'VDM_PACKAGE_NAME' '.package.package_name' || has_error=true
-    getConfigValue 'VDM_CODE_NAME' '.package.code_name' || has_error=true
-    getConfigValue 'VDM_PACKAGE_VERSION_ID' '.package.version_id' false
-    getConfigValue 'VDM_NAME' '.package.name' || has_error=true
-    getConfigValue 'VDM_DESCRIPTION' '.package.description' || has_error=true
-    getConfigValue 'VDM_MIN_JOOMLA_VERSION' '.package.min_joomla_version' false || VDM_MIN_JOOMLA_VERSION="3.8"
-    getConfigValue 'VDM_MAX_JOOMLA_VERSION' '.package.max_joomla_version' false || unset VDM_MAX_JOOMLA_VERSION
-    getConfigValue 'VDM_COPYRIGHT' '.package.copyright' || has_error=true
-    getConfigValue 'VDM_COPYRIGHT_YEAR' '.package.copyright_year' || has_error=true
-    getConfigValue 'VDM_LICENSE' '.package.license' || has_error=true
-    getConfigValue 'VDM_LICENSE_FILE' '.package.license_file' || has_error=true
-    getConfigValue 'VDM_INSTALLATION_FILE' '.package.installation_file' false || unset VDM_INSTALLATION_FILE
-    getConfigValue 'VDM_AUTHOR' '.package.author' || has_error=true
-    getConfigValue 'VDM_AUTHOR_EMAIL' '.package.author_email' || has_error=true
-    getConfigValue 'VDM_AUTHOR_URL' '.package.author_url' || has_error=true
-    getConfigValue 'VDM_UPDATE_SERVER' '.package.update_servers' || has_error=true
-    # check if we have some errors already
-    $has_error && return 13
-
-    # success
-    return 0
-  else
-    # failed
-    return 17
-  fi
+  # package related details
+  getConfigValue 'VDM_PACKAGE_NAME' '.package.package_name' || has_error=true
+  getConfigValue 'VDM_CODE_NAME' '.package.code_name' || has_error=true
+  getConfigValue 'VDM_PACKAGE_VERSION_ID' '.package.version_id' false
+  getConfigValue 'VDM_NAME' '.package.name' || has_error=true
+  getConfigValue 'VDM_DESCRIPTION' '.package.description' || has_error=true
+  getConfigValue 'VDM_MIN_JOOMLA_VERSION' '.package.min_joomla_version' false || VDM_MIN_JOOMLA_VERSION="3.8"
+  getConfigValue 'VDM_MAX_JOOMLA_VERSION' '.package.max_joomla_version' false || unset VDM_MAX_JOOMLA_VERSION
+  getConfigValue 'VDM_COPYRIGHT' '.package.copyright' || has_error=true
+  getConfigValue 'VDM_COPYRIGHT_YEAR' '.package.copyright_year' || has_error=true
+  getConfigValue 'VDM_LICENSE' '.package.license' || has_error=true
+  getConfigValue 'VDM_LICENSE_FILE' '.package.license_file' || has_error=true
+  getConfigValue 'VDM_INSTALLATION_FILE' '.package.installation_file' false || unset VDM_INSTALLATION_FILE
+  getConfigValue 'VDM_AUTHOR' '.package.author' || has_error=true
+  getConfigValue 'VDM_AUTHOR_EMAIL' '.package.author_email' || has_error=true
+  getConfigValue 'VDM_AUTHOR_URL' '.package.author_url' || has_error=true
+  getConfigValue 'VDM_UPDATE_SERVER' '.package.update_servers' || has_error=true
+  # check if we have some errors already
+  $has_error && return 13
+  # success
+  return 0
 }
 
 # set the target repository details
@@ -1079,6 +1076,32 @@ function runUninstall() {
   fi
 }
 
+# check if we have project overides for the environment variables
+function getProjectEnvironment() {
+  # load the config data
+  VDM_CONFIG_DATA=$(cat "$VDM_PACKAGE_CONF_FILE")
+  # make sure we have package details
+  if [[ "${VDM_CONFIG_DATA}" =~ '"package"' ]] && [[ "${VDM_CONFIG_DATA}" =~ '"files"' ]]; then
+    # little information of progress
+    _echo "[info] Loading the environment variables..."
+    # make configuration globally available
+    export VDM_CONFIG_DATA
+    # get package code_name
+    getConfigValue 'VDM_CODE_NAME' '.package.code_name'
+    # the tmp path to the env of this project
+    tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.${VDM_CODE_NAME}"
+    # shellcheck disable=SC1090
+    [ -f "${tmp_path}" ] && source "${tmp_path}"
+    # clear this tmp out
+    unset tmp_path
+    # success
+    return 0
+  else
+    # failed
+    return 17
+  fi
+}
+
 # update the script with the latest version
 function runUpdate() {
   # remove the current version
@@ -1194,7 +1217,7 @@ tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.env"
 # if path not set try $PWD path
 [ -f "$tmp_path" ] || tmp_path="$PWD/.env"
 VDM_ENV_FILE_PATH="${VDM_ENV_FILE_PATH:-$tmp_path}"
-# car this tmp out
+# clear this tmp out
 unset tmp_path
 
 # check if we have options
