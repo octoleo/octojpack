@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.0.1"
+PROGRAM_VERSION="1.0.2"
 PROGRAM_V="1.0"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -224,7 +224,7 @@ function getConfigValue() {
   # to set per project use the config file of the project
   getValueFromJson "$1" "$2" || {
     # give little heads-up if not blocked
-    "${3:-true}"  && echo >&2 "[error] We require ($2) for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in $VDM_PACKAGE_CONF_FILE."
+    "${3:-true}" && echo >&2 "[error] We require ($2) for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in $VDM_PACKAGE_CONF_FILE."
     # we had no success
     return 19
   }
@@ -309,15 +309,14 @@ function setFiles() {
   # little information of progress
   _echo "[info] Loading the Files..."
   # make sure its reset
-  echo -e '\t<files folder="src">' > "${VDM_FILES_XML}"
-  echo "" > "${VDM_README_FILES_MD}"
+  echo -e '\t<files folder="src">' >"${VDM_FILES_XML}"
+  echo "" >"${VDM_README_FILES_MD}"
   # check for errors
   local has_error=false
   local has_files=false
   # loop over the repos
   local i=0
-  for owner in $(echo "${VDM_CONFIG_DATA}" | jq -r '.files[].owner');
-  do
+  for owner in $(echo "${VDM_CONFIG_DATA}" | jq -r '.files[].owner'); do
     # get the config values needed
     # shellcheck disable=SC2015
     [ -n "${owner}" ] && VDM_OWNER="${owner}" || continue
@@ -384,9 +383,9 @@ function setFiles() {
       # check if this is the package version ID
       if [ -n "${VDM_PACKAGE_VERSION_ID}" ] &&
         [ -z "${VDM_PACKAGE_VERSION}" ] &&
-        [ "${VDM_PACKAGE_VERSION_ID}" = "${VDM_ID}" ] ; then
+        [ "${VDM_PACKAGE_VERSION_ID}" = "${VDM_ID}" ]; then
         # set the package version
-        VDM_PACKAGE_VERSION="${VDM_ZIP_NAME}";
+        VDM_PACKAGE_VERSION="${VDM_ZIP_NAME}"
         export VDM_PACKAGE_VERSION
       fi
       # we have a file
@@ -398,7 +397,7 @@ function setFiles() {
     clearFileEnv
   done
   # make sure to close the files
-  echo -e '\t</files>' >> "${VDM_FILES_XML}"
+  echo -e '\t</files>' >>"${VDM_FILES_XML}"
   # check if we found a file
   $has_files || return 13
   # success
@@ -407,28 +406,28 @@ function setFiles() {
 
 # just to clear all file ENVs
 function clearFileEnv() {
-    # SET IN: setFiles
-    unset VDM_OWNER
-    unset VDM_REPO
-    unset VDM_TYPE
-    unset VDM_ID
-    unset VDM_GROUP
-    unset VDM_CLIENT
-    unset VDM_TYPE_KEY
-    unset VDM_TYPE_VAL
-    unset VDM_TOKEN_NAME
-    unset VDM_TOKEN
-    unset VDM_API_NAME
-    unset VDM_API
-    unset VDM_URL_NAME
-    unset VDM_URL
-    unset VDM_MODE
-    # SET IN: getFileByKey || getFileByRelease || getFileByTag
-    unset VDM_ZIP_NAME
-    unset VDM_ZIP_MESSAGE
-    unset VDM_RELEASE_ID
-    unset VDM_ASSET_ID
-    unset VDM_ASSET_DOWNLOAD
+  # SET IN: setFiles
+  unset VDM_OWNER
+  unset VDM_REPO
+  unset VDM_TYPE
+  unset VDM_ID
+  unset VDM_GROUP
+  unset VDM_CLIENT
+  unset VDM_TYPE_KEY
+  unset VDM_TYPE_VAL
+  unset VDM_TOKEN_NAME
+  unset VDM_TOKEN
+  unset VDM_API_NAME
+  unset VDM_API
+  unset VDM_URL_NAME
+  unset VDM_URL
+  unset VDM_MODE
+  # SET IN: getFileByKey || getFileByRelease || getFileByTag
+  unset VDM_ZIP_NAME
+  unset VDM_ZIP_MESSAGE
+  unset VDM_RELEASE_ID
+  unset VDM_ASSET_ID
+  unset VDM_ASSET_DOWNLOAD
 }
 
 # get the repository zip package
@@ -502,8 +501,7 @@ function getFileByRelease() {
   }
   # we may have multiple assets (but we only load the first ZIP file we get)
   # because we can only have the ${VDM_ID} only once in the xml file
-  for asset_zip_file_name in $(echo "${VDM_API_BUCKET}" | jq -r '.assets[].name');
-  do
+  for asset_zip_file_name in $(echo "${VDM_API_BUCKET}" | jq -r '.assets[].name'); do
     # make sure we did not already get a file
     $has_files && {
       # increment
@@ -589,7 +587,7 @@ function setFileToREADME() {
     echo -n "(https://${VDM_URL}/${VDM_OWNER}/${VDM_REPO})"
     echo " [${zip_name}](${zip_url})"
     echo "> ${message}"
-  } >> "${VDM_README_FILES_MD}"
+  } >>"${VDM_README_FILES_MD}"
 }
 
 # set the File Details to XML
@@ -609,7 +607,7 @@ function setFileToXML() {
       echo -n "${VDM_TYPE_VAL}" &&
       echo -n '"'
     echo ">$zip_name</file>"
-  } >> "${VDM_FILES_XML}"
+  } >>"${VDM_FILES_XML}"
 }
 
 # make API call
@@ -655,13 +653,12 @@ function setLanguages() {
   # little information of progress
   _echo "[info] Loading the Languages..."
   # make sure its reset
-  echo -e '\t<languages folder="languages">' > "${VDM_LANGUAGES_XML}"
+  echo -e '\t<languages folder="languages">' >"${VDM_LANGUAGES_XML}"
   # check for errors
   local has_error
   # loop over the repos
   i=0
-  for vdm_lang_tag in $(echo "${VDM_CONFIG_DATA}" | jq -r '.languages[].tag');
-  do
+  for vdm_lang_tag in $(echo "${VDM_CONFIG_DATA}" | jq -r '.languages[].tag'); do
     # check for errors
     has_error=false
     # get the config values needed
@@ -692,10 +689,10 @@ function setLanguages() {
     fi
     # add value to language file
     if [ -f "${language_file_path}" ]; then
-      echo "${language_string}" >> "${language_file_path}"
+      echo "${language_string}" >>"${language_file_path}"
     else
       # first time
-      echo "${language_string}" > "${language_file_path}"
+      echo "${language_string}" >"${language_file_path}"
       # add to xml
       setLanguageXml "${vdm_lang_tag}" "${vdm_lang_tag}/${language_file_name}"
     fi
@@ -708,16 +705,16 @@ function setLanguages() {
     clearLangEnv
   done
   # make sure its reset
-  echo -e '\t</languages>' >> "${VDM_LANGUAGES_XML}"
+  echo -e '\t</languages>' >>"${VDM_LANGUAGES_XML}"
 }
 
 # just to clear all file ENVs
 function clearLangEnv() {
-    # SET IN: setLanguages
-    unset vdm_lang_tag
-    unset vdm_lang_ini
-    unset vdm_lang_key
-    unset vdm_lang_value
+  # SET IN: setLanguages
+  unset vdm_lang_tag
+  unset vdm_lang_ini
+  unset vdm_lang_key
+  unset vdm_lang_value
 }
 
 # set the Language XML Details
@@ -729,7 +726,7 @@ function setLanguageXml() {
     echo -n '">'
     echo -n "${2}"
     echo '</language>'
-  } >> "${VDM_LANGUAGES_XML}"
+  } >>"${VDM_LANGUAGES_XML}"
 }
 
 # set the Package XML Details
@@ -824,7 +821,7 @@ function setPackageXml() {
     cat "${VDM_FILES_XML}"
     # close the extension xml
     echo '</extension>'
-  } > "${VDM_PACKAGE_XML}"
+  } >"${VDM_PACKAGE_XML}"
   # remove file no longer needed
   rm "${VDM_LANGUAGES_XML}"
   rm "${VDM_FILES_XML}"
@@ -865,7 +862,7 @@ function setReadMe() {
     echo "### License"
     echo "> ${VDM_LICENSE}"
     echo ""
-  } > "${VDM_README_MD}"
+  } >"${VDM_README_MD}"
   # remove the Readme files build
   rm "${VDM_README_FILES_MD:?}"
 }
@@ -926,30 +923,30 @@ function setInstallFile() {
 
 # get the package repository
 function setRepository() {
-	# change to git directory
-	cd "${VDM_PACKAGE_GIT_DIR}" || return 22
+  # change to git directory
+  cd "${VDM_PACKAGE_GIT_DIR}" || return 22
   # check if the repository exist on our gitea instance
   local update_repo
   # shellcheck disable=SC2015
-  if git ls-remote "ssh://git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" -q >/dev/null 2>&1; then
+  if git ls-remote "ssh://git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" -q >/dev/null 2>&1; then
     getExistingRepository || return 23
     update_repo=true
   else
     setNewRepository || return 24
     update_repo=false
   fi
-	# make sure we are in the correct dir and then remove all existing data
-	cd "${VDM_PACKAGE_GIT_DIR}/${VDM_PACKAGE_REPO}" || return 25
-	# remove any existing files and folders from repository
-	rm -rf -- * || return 26
-	# move all new files into repository
-	setRepositoryNewFiles || return 27
-	# check if we have changes
-	if $update_repo && [[ -z $(git status --porcelain) ]]; then
-	  _echo "[info] No changes found in (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
-	else
-	  # check if we must update or create repository
-	  if $update_repo; then
+  # make sure we are in the correct dir and then remove all existing data
+  cd "${VDM_PACKAGE_GIT_DIR}/${VDM_PACKAGE_REPO}" || return 25
+  # remove any existing files and folders from repository
+  rm -rf -- * || return 26
+  # move all new files into repository
+  setRepositoryNewFiles || return 27
+  # check if we have changes
+  if $update_repo && [[ -z $(git status --porcelain) ]]; then
+    _echo "[info] No changes found in (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+  else
+    # check if we must update or create repository
+    if $update_repo; then
       # make API call
       callGiteaAPI "tags" "${VDM_PACKAGE_OWNER}" "${VDM_PACKAGE_REPO}" "${VDM_PACKAGE_API}" "${VDM_PACKAGE_TOKEN}" || return 28
       # get the name
@@ -964,41 +961,41 @@ function setRepository() {
       else
         message="Update"
       fi
-	    # get the repository last tag
-	    makeGitCommit "${message}" "${VDM_PACKAGE_VERSION:-1.0.0}" "${version_name}" || return 28
-	    # give little notice of progress
-	    _echo "[info] Pushing changes to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
-	    # make a normal push update
-	    git push >/dev/null 2>&1 || return 30
-	    git push --tags >/dev/null 2>&1 || return 30
-	  else
-	    # create new repo
-	    setGitRepository || return 29
-	    # give little notice of progress
-	    _echo "[info] Pushing (TO CREATE) changes to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
-	    # push to creat the repository (if allowed)
-	    git push -u origin master >/dev/null 2>&1 || return 30
-	    git push --tags >/dev/null 2>&1 || return 30
-	  fi
-	fi
-	# success
-	return 0
+      # get the repository last tag
+      makeGitCommit "${message}" "${VDM_PACKAGE_VERSION:-1.0.0}" "${version_name}" || return 28
+      # give little notice of progress
+      _echo "[info] Pushing changes to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+      # make a normal push update
+      git push >/dev/null 2>&1 || return 30
+      git push --tags >/dev/null 2>&1 || return 30
+    else
+      # create new repo
+      setGitRepository || return 29
+      # give little notice of progress
+      _echo "[info] Pushing (TO CREATE) changes to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+      # push to creat the repository (if allowed)
+      git push -u origin master >/dev/null 2>&1 || return 30
+      git push --tags >/dev/null 2>&1 || return 30
+    fi
+  fi
+  # success
+  return 0
 }
 
 # get the existing repository
 function getExistingRepository() {
   # little information of progress
-	_echo "[info] Getting (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
-	# clone the existing repository
-	git clone "ssh://git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
-	# success
-	return 0
+  _echo "[info] Getting (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+  # clone the existing repository
+  git clone "ssh://git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
+  # success
+  return 0
 }
 
 # set the new repository
 function setNewRepository() {
   # little information of progress
-	_echo "[info] Creating (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) folder"
+  _echo "[info] Creating (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) folder"
   # check if the repository exist on our gitea instance
   mkdir -p "${VDM_PACKAGE_GIT_DIR}/${VDM_PACKAGE_REPO}" || return 24
   # success
@@ -1008,15 +1005,15 @@ function setNewRepository() {
 # set new git repository
 function setGitRepository() {
   # little information of progress
-	_echo "[info] Initializing the (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+  _echo "[info] Initializing the (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
   # initialize the repository
   git init >/dev/null 2>&1 || return 29
   # add the first commit
   makeGitCommit "First Commit - ${VDM_PACKAGE_VERSION:-1.0.0}" "${VDM_PACKAGE_VERSION:-1.0.0}" >/dev/null 2>&1 || return 28
   # little information of progress
-	_echo "[info] Adding remote branch to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+  _echo "[info] Adding remote branch to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
   # add the remote branch
-  git remote add origin "ssh://git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 29
+  git remote add origin "ssh://git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 29
   #success
   return 0
 }
@@ -1024,20 +1021,20 @@ function setGitRepository() {
 # make the git commit
 function makeGitCommit() {
   # add all (or remove)
-	git add .  >/dev/null 2>&1 || return 28
+  git add . >/dev/null 2>&1 || return 28
   # little information of progress
-	_echo "[info] Committing (${1}) to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
-	# set the commit message
-	git commit -am"${1}" >/dev/null 2>&1 || return 28
-	# check if the tag should be added
-	if [ "${2:-error}" != "error" ] && [ "${2:-error}" != "${3:-none}" ]; then
+  _echo "[info] Committing (${1}) to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
+  # set the commit message
+  git commit -am"${1}" >/dev/null 2>&1 || return 28
+  # check if the tag should be added
+  if [ "${2:-error}" != "error" ] && [ "${2:-error}" != "${3:-none}" ]; then
     # little information of progress
     _echo "[info] Adding TAG (${2}) to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
     # add the new tag
     git tag "${2}" >/dev/null 2>&1 || return 28
-	fi
-	# success
-	return 0
+  fi
+  # success
+  return 0
 }
 
 # add all the new files to the repository
@@ -1382,8 +1379,8 @@ fi
 
 # make sure whe have a configuration file
 [ -f "${VDM_PACKAGE_CONF_FILE}" ] || {
-    echo >&2 "[error] The config:${VDM_PACKAGE_CONF_FILE:-empty_value} could not be found. Aborting."
-    exit 18
+  echo >&2 "[error] The config:${VDM_PACKAGE_CONF_FILE:-empty_value} could not be found. Aborting."
+  exit 18
 }
 
 # run Main ┬┴┬┴┤(･_├┬┴┬┴
