@@ -1235,144 +1235,94 @@ while :; do
     runUpdate
     shift
     ;;
-  -e | --env) # Takes an option argument; ensure it has been specified.
-    if [ "$2" ]; then
-      VDM_ENV_FILE_PATH=$2
-      shift
-    else
+  -e=* | --env=*)
+    VDM_ENV_FILE_PATH=${1#*=}
+    if [ -z "$VDM_ENV_FILE_PATH" ]; then
       echo '[error] "--env" requires a non-empty option argument.'
       exit 17
     fi
     ;;
-  -e=?* | --env=?*)
-    VDM_ENV_FILE_PATH=${1#*=} # Delete everything up to "=" and assign the remainder.
-    ;;
-  -e= | --env=) # Handle the case of an empty --packages=
-    echo '[error] "--env=" requires a non-empty option argument.'
-    exit 17
-    ;;
-  --conf | --config) # Takes an option argument; ensure it has been specified.
-    if [ "$2" ]; then
-      VDM_PACKAGE_CONF_FILE=$2
-      shift
-    else
+  --conf=* | --config=*)
+    VDM_PACKAGE_CONF_FILE=${1#*=}
+    if [ -z "$VDM_PACKAGE_CONF_FILE" ]; then
       echo '[error] "--conf" requires a non-empty option argument.'
       exit 17
     fi
     ;;
-  --conf=?* | --config=?*)
-    VDM_PACKAGE_CONF_FILE=${1#*=} # Delete everything up to "=" and assign the remainder.
-    ;;
-  --conf= | --config=) # Handle the case of an empty --packages=
-    echo '[error] "--conf=" requires a non-empty option argument.'
-    exit 17
-    ;;
-  -p | --packager) # Takes an option argument; ensure it has been specified.
-    if [ "$2" ]; then
-      VDM_PACKAGER=$2
-      shift
-    else
+  -p=* | --packager=*)
+    VDM_PACKAGER=${1#*=}
+    if [ -z "$VDM_PACKAGER" ]; then
       echo '[error] "--packager" requires a non-empty option argument.'
       exit 17
     fi
     ;;
-  -p=?* | --packager=?*)
-    VDM_PACKAGER=${1#*=} # Delete everything up to "=" and assign the remainder.
-    ;;
-  -p= | --packager=) # Handle the case of an empty --packages=
-    echo '[error] "--packager=" requires a non-empty option argument.'
-    exit 17
-    ;;
-  -pu | --packager-url) # Takes an option argument; ensure it has been specified.
-    if [ "$2" ]; then
-      VDM_PACKAGER_URL=$2
-      shift
-    else
+  -pu=* | --packager-url=*)
+    VDM_PACKAGER_URL=${1#*=}
+    if [ -z "$VDM_PACKAGER_URL" ]; then
       echo '[error] "--packager-url" requires a non-empty option argument.'
       exit 17
     fi
     ;;
-  -pu=?* | --packager-url=?*)
-    VDM_PACKAGER_URL=${1#*=} # Delete everything up to "=" and assign the remainder.
-    ;;
-  -pu= | --packager-url=) # Handle the case of an empty --packager-url=
-    echo '[error] "--packager-url=" requires a non-empty option argument.'
-    exit 17
-    ;;
-  -t | --token) # Takes an option argument; ensure it has been specified.
-    if [ "$2" ]; then
-      VDM_GLOBAL_TOKEN=$2
-      shift
-    else
+  -t=* | --token=*)
+    VDM_GLOBAL_TOKEN=${1#*=}
+    if [ -z "$VDM_GLOBAL_TOKEN" ]; then
       echo '[error] "--token" requires a non-empty option argument.'
       exit 17
     fi
     ;;
-  -t=?* | --token=?*)
-    # shellcheck disable=SC2034
-    VDM_GLOBAL_TOKEN=${1#*=} # Delete everything up to "=" and assign the remainder.
-    ;;
-  -t= | --token=) # Handle the case of an empty --packages=
-    echo '[error] "--token=" requires a non-empty option argument.'
-    exit 17
-    ;;
-  -a | --api) # Takes an option argument; ensure it has been specified.
-    if [ "$2" ]; then
-      VDM_GLOBAL_API=$2
-      shift
-    else
+  -a=* | --api=*)
+    VDM_GLOBAL_API=${1#*=}
+    if [ -z "$VDM_GLOBAL_API" ]; then
       echo '[error] "--api" requires a non-empty option argument.'
       exit 17
     fi
     ;;
-  -a=?* | --api=?*)
-    # shellcheck disable=SC2034
-    VDM_GLOBAL_API=${1#*=} # Delete everything up to "=" and assign the remainder.
-    ;;
-  -a= | --api=) # Handle the case of an empty --packages=
-    echo '[error] "--api=" requires a non-empty option argument.'
-    exit 17
-    ;;
-  -u | --url) # Takes an option argument; ensure it has been specified.
-    if [ "$2" ]; then
-      VDM_GLOBAL_URL=$2
-      shift
-    else
+  -u=* | --url=*)
+    VDM_GLOBAL_URL=${1#*=}
+    if [ -z "$VDM_GLOBAL_URL" ]; then
       echo '[error] "--url" requires a non-empty option argument.'
       exit 17
     fi
     ;;
-  -u=?* | --url=?*)
-    # shellcheck disable=SC2034
-    VDM_GLOBAL_URL=${1#*=} # Delete everything up to "=" and assign the remainder.
+  -v=* | --verbosity=*)
+    VDM_VERBOSITY=${1#*=}
+    if [ -z "$VDM_VERBOSITY" ]; then
+      echo '[error] "--verbosity" requires a non-empty option argument.'
+      exit 17
+    fi
     ;;
-  -u= | --url=) # Handle the case of an empty --packages=
-    echo '[error] "--url=" requires a non-empty option argument.'
-    exit 17
+  --) # End of all options.
+    shift
+    break
     ;;
-  *) # Default case: No more options, so break out of the loop.
-    break ;;
+  -?*)
+    printf '[error] Unknown option: %s\n' "$1" >&2
+    exit 1
+    ;;
+  *) # Default case: If no more options then break out of the loop.
+    break
   esac
   shift
 done
 
 # load local environment variables
-# shellcheck disable=SC1090
-[ -f "${VDM_ENV_FILE_PATH}" ] && source "${VDM_ENV_FILE_PATH}"
+if [ -f "$VDM_ENV_FILE_PATH" ]; then
+  # shellcheck disable=SC1090
+  source "$VDM_ENV_FILE_PATH"
+fi
 
 # if path not set try $PWD path (so you can open a folder that has .octojpack file and it will be loaded)
 tmp_path="$PWD/.${PROGRAM_CODE}"
-VDM_PACKAGE_CONF_FILE="${VDM_PACKAGE_CONF_FILE:-$tmp_path}"
+VDM_PACKAGE_CONF_FILE=${VDM_PACKAGE_CONF_FILE:-$tmp_path}
 
 # check if the config is passed via a URL
-if [[ "${VDM_PACKAGE_CONF_FILE}" =~ ^"http:" ]] || [[ "${VDM_PACKAGE_CONF_FILE}" =~ ^"https:" ]]; then
-  # shellcheck disable=SC2143
-  if [[ $(wget -S --spider "${VDM_PACKAGE_CONF_FILE}" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
+if [[ "$VDM_PACKAGE_CONF_FILE" =~ ^"http:" ]] || [[ "$VDM_PACKAGE_CONF_FILE" =~ ^"https:" ]]; then
+  if [[ $(wget -S --spider "$VDM_PACKAGE_CONF_FILE" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
     mkdir -p "/home/$USER/.config/${PROGRAM_CODE}"
-    wget --quiet "${VDM_PACKAGE_CONF_FILE}" -O "/home/$USER/.config/${PROGRAM_CODE}/conf.json"
+    wget --quiet "$VDM_PACKAGE_CONF_FILE" -O "/home/$USER/.config/${PROGRAM_CODE}/conf.json"
     VDM_PACKAGE_CONF_FILE="/home/$USER/.config/${PROGRAM_CODE}/conf.json"
   else
-    echo >&2 "[error] The config:${VDM_PACKAGE_CONF_FILE} is not a valid URL. Aborting."
+    echo >&2 "[error] The config:$VDM_PACKAGE_CONF_FILE is not a valid URL. Aborting."
     exit 18
   fi
 fi
