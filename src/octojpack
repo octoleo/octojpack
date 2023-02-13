@@ -945,6 +945,8 @@ function setRepository() {
   if $update_repo && [[ -z $(git status --porcelain) ]]; then
     _echo "[info] No changes found in (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
   else
+    # add user details
+    setUserDetails
     # check if we must update or create repository
     if $update_repo; then
       # make API call
@@ -1018,6 +1020,39 @@ function setGitRepository() {
   return 0
 }
 
+# Set Git user details based on environment variables
+setUserDetails () {
+  # Set Git author name
+  if [ -n "${GIT_AUTHOR_NAME+x}" ]; then
+    git config user.name "${GIT_AUTHOR_NAME}"
+    _echo "[info] Git author name set to: ${GIT_AUTHOR_NAME}"
+  fi
+
+  # Set Git author email
+  if [ -n "${GIT_AUTHOR_EMAIL+x}" ]; then
+    git config user.email "${GIT_AUTHOR_EMAIL}"
+    _echo "[info] Git author email set to: ${GIT_AUTHOR_EMAIL}"
+  fi
+
+  # Set Git GPG sign
+  if [ -n "${GIT_GPG_SIGN+x}" ]; then
+    git config commit.gpgsign "${GIT_GPG_SIGN}"
+    _echo "[info] Git GPG sign set to: ${GIT_GPG_SIGN}"
+  fi
+
+  # Set Git SSH key path
+  if [ -n "${GIT_SSH_KEY_PATH+x}" ]; then
+    git config core.sshCommand "ssh -i ${GIT_SSH_KEY_PATH}"
+    _echo "[info] Git SSH key path set to: ${GIT_SSH_KEY_PATH}"
+  fi
+
+  # Set Git GPG key
+  if [ -n "${GIT_GPG_KEY+x}" ]; then
+    git config user.signingkey "${GIT_GPG_KEY}"
+    _echo "[info] Git GPG key set to: ${GIT_GPG_KEY}"
+  fi
+}
+
 # make the git commit
 function makeGitCommit() {
   # add all (or remove)
@@ -1057,7 +1092,8 @@ function setRepositoryNewFiles() {
 # gives us a unique file name for any url
 function getUniqueFileName() {
   local url="$1"
-  local hash=$(echo "$url" | sha256sum | awk '{print $1}')
+  local hash
+  hash=$(echo "$url" | sha256sum | awk '{print $1}')
   echo "${hash:0:10}"
 }
 
@@ -1080,7 +1116,7 @@ function runUninstall() {
   fi
 }
 
-# check if we have project overides for the environment variables
+# check if we have project overrides for the environment variables
 function getProjectEnvironment() {
   # load the config data
   VDM_CONFIG_DATA=$(cat "$VDM_PACKAGE_CONF_FILE")
