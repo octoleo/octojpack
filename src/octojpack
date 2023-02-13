@@ -385,7 +385,7 @@ function setFiles() {
         [ -z "${VDM_PACKAGE_VERSION}" ] &&
         [ "${VDM_PACKAGE_VERSION_ID}" = "${VDM_ID}" ]; then
         # set the package version
-        VDM_PACKAGE_VERSION="${VDM_ZIP_NAME}"
+        VDM_PACKAGE_VERSION="${VDM_ZIP_VERSION:-$VDM_ZIP_NAME}"
         export VDM_PACKAGE_VERSION
       fi
       # we have a file
@@ -424,6 +424,7 @@ function clearFileEnv() {
   unset VDM_MODE
   # SET IN: getFileByKey || getFileByRelease || getFileByTag
   unset VDM_ZIP_NAME
+  unset VDM_ZIP_VERSION
   unset VDM_ZIP_MESSAGE
   unset VDM_RELEASE_ID
   unset VDM_ASSET_ID
@@ -447,6 +448,8 @@ function getZipFile() {
       return 11
     fi
   else
+    # make API call
+    callGiteaAPI "tags" "${VDM_OWNER}" "${VDM_REPO}" "${VDM_API}" "${VDM_TOKEN}" || return 11
     # get the file by key/branch/tag
     getFileByKey || return 11
   fi
@@ -551,6 +554,11 @@ function getFileByKey() {
   VDM_ZIP_NAME="${VDM_MODE}"
   # get the message
   VDM_ZIP_MESSAGE="${VDM_MODE}"
+  # get the name
+  getValueFromJson "VDM_ZIP_VERSION" ".name" "${VDM_API_BUCKET}" || {
+    _echo "[error] Tag name not found in VDM_API_BUCKET. (but ignored since we are getting file by key)"
+    VDM_ZIP_VERSION="${VDM_MODE}"
+  }
   # download the zip file if not already set
   if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" ]; then
     # give message
@@ -565,6 +573,7 @@ function getFileByKey() {
   # move the tag values to global scope
   export VDM_ZIP_NAME
   export VDM_ZIP_MESSAGE
+  export VDM_ZIP_VERSION
   # add file to xml
   setFileToXML
   # update the readme
@@ -1021,7 +1030,7 @@ function setGitRepository() {
 }
 
 # Set Git user details based on environment variables
-setUserDetails () {
+function setUserDetails () {
   # Set Git author name
   if [ -n "${GIT_AUTHOR_NAME+x}" ]; then
     git config user.name "${GIT_AUTHOR_NAME}"
