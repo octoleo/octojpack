@@ -545,7 +545,7 @@ function getFileByRelease() {
   return 0
 }
 
-# get the file by tag
+# get the file by key
 function getFileByKey() {
   # get the name
   VDM_ZIP_NAME="${VDM_MODE}"
@@ -1054,6 +1054,13 @@ function setRepositoryNewFiles() {
   return 0
 }
 
+# gives us a unique file name for any url
+function getUniqueFileName() {
+  local url="$1"
+  local hash=$(echo "$url" | sha256sum | awk '{print $1}')
+  echo "${hash:0:10}"
+}
+
 # give the echo messages
 # only if not set to be quiet
 function _echo() {
@@ -1062,7 +1069,7 @@ function _echo() {
   fi
 }
 
-# remove the program if installed
+# uninstalls the octojpack program.
 function runUninstall() {
   # now remove the script
   if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
@@ -1099,7 +1106,7 @@ function getProjectEnvironment() {
   fi
 }
 
-# update the script with the latest version
+# updates the octojpack program to the latest version.
 function runUpdate() {
   # remove the current version
   if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
@@ -1315,14 +1322,22 @@ fi
 tmp_path="$PWD/.${PROGRAM_CODE}"
 VDM_PACKAGE_CONF_FILE=${VDM_PACKAGE_CONF_FILE:-$tmp_path}
 
-# check if the config is passed via a URL
-if [[ "$VDM_PACKAGE_CONF_FILE" =~ ^"http:" ]] || [[ "$VDM_PACKAGE_CONF_FILE" =~ ^"https:" ]]; then
-  if [[ $(wget -S --spider "$VDM_PACKAGE_CONF_FILE" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
-    mkdir -p "/home/$USER/.config/${PROGRAM_CODE}"
-    wget --quiet "$VDM_PACKAGE_CONF_FILE" -O "/home/$USER/.config/${PROGRAM_CODE}/conf.json"
-    VDM_PACKAGE_CONF_FILE="/home/$USER/.config/${PROGRAM_CODE}/conf.json"
+# Check if the config file is passed as a URL
+if [[ "$VDM_PACKAGE_CONF_FILE" =~ ^http: ]] || [[ "$VDM_PACKAGE_CONF_FILE" =~ ^https: ]]; then
+  # Check if the URL is valid
+  if curl --output /dev/null --silent --head --fail "$VDM_PACKAGE_CONF_FILE"; then
+    # Create the directory for the configuration file if it doesn't exist
+    mkdir -p "$HOME/.config/$PROGRAM_CODE"
+
+    # get a file name
+    file_name=$(getUniqueFileName "$VDM_PACKAGE_CONF_FILE")
+
+    # Download the configuration file
+    curl --silent "$VDM_PACKAGE_CONF_FILE" -o "$HOME/.config/$PROGRAM_CODE/${file_name}_conf.json"
+    VDM_PACKAGE_CONF_FILE="$HOME/.config/$PROGRAM_CODE/${file_name}_conf.json"
   else
-    echo >&2 "[error] The config:$VDM_PACKAGE_CONF_FILE is not a valid URL. Aborting."
+    # Print an error message and exit if the URL is invalid
+    echo >&2 "[error] The config file at $VDM_PACKAGE_CONF_FILE is not a valid URL. Aborting."
     exit 18
   fi
 fi
