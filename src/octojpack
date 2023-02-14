@@ -1277,11 +1277,11 @@ tmp_path="${VDM_MAIN_DIR}/licenses"
 VDM_LICENSE_DIR="${VDM_LICENSE_DIR:-$tmp_path}"
 
 # the environment file variables path
-tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.env"
+tmp_path="$PWD/.env_${PROGRAM_CODE}"
 # if file not set try $PWD path
-[ -f "$tmp_path" ] || tmp_path="$PWD/.env_${PROGRAM_CODE}"
-# if file not set try $VDM_MAIN_DIR path
 [ -f "$tmp_path" ] || tmp_path="$VDM_MAIN_DIR/.env_${PROGRAM_CODE}"
+# if file not set try $VDM_MAIN_DIR path
+[ -f "$tmp_path" ] || tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.env"
 # ALWAYS USE GLOBAL IF SET
 VDM_ENV_FILE_PATH="${VDM_ENV_FILE_PATH:-$tmp_path}"
 

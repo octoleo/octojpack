@@ -29,14 +29,22 @@ Usage: octojpack [OPTION...]
 	Packager url
 	example: octojpack -pu="https://git.vdm.dev/"
 	======================================================
+   -md | --main-dir=<path>
+	load the main working directory
+	example: octojpack --main-dir=/src
+	======================================================
    -e | --env=<file>
 	load the environment variables file
 	example: octojpack --env=/src/.env
 	======================================================
-   --conf | --config=<path>
+   --conf | --config=<path/url>
 	load the configuration for the package in json format
 	   file-example: src/example.json
 	example: octojpack --config=config.json
+	======================================================
+   -ld | --licence-dir=<path>
+	load the licence directory
+	example: octojpack --licence-dir=/src/licence
 	======================================================
    -t | --token=<access_token>
 	load the global token
@@ -67,7 +75,7 @@ Usage: octojpack [OPTION...]
 	example: octojpack -h
 	example: octojpack --help
 	======================================================
-			Octojpack v1.0
+			Octojpack
 	======================================================
 ```
 
