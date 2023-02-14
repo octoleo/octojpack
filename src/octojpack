@@ -258,8 +258,8 @@ function setPackageDir() {
   # little information of progress
   _echo "[info] Setting the Package Directories..."
   # the full project path
-  VDM_PACKAGE_DIR="${PACKAGE_DIR}/${VDM_PACKAGE_REPO}"
-  VDM_PACKAGE_GIT_DIR="${PACKAGE_DIR}/git"
+  VDM_PACKAGE_DIR="${VDM_MAIN_DIR}/${VDM_PACKAGE_REPO}"
+  VDM_PACKAGE_GIT_DIR="${VDM_MAIN_DIR}/git"
   VDM_PACKAGE_SRC_DIR="${VDM_PACKAGE_DIR}/src"
   # always remove previous files (if found)
   rm -fr "${VDM_PACKAGE_DIR:?}"
@@ -269,11 +269,11 @@ function setPackageDir() {
   # set the package xml
   VDM_PACKAGE_XML="${VDM_PACKAGE_DIR}/${VDM_PACKAGE_NAME,,}.xml"
   # set the files xml
-  VDM_FILES_XML="${PACKAGE_DIR}/files.xml"
+  VDM_FILES_XML="${VDM_MAIN_DIR}/files.xml"
   # set the languages xml
-  VDM_LANGUAGES_XML="${PACKAGE_DIR}/languages.xml"
+  VDM_LANGUAGES_XML="${VDM_MAIN_DIR}/languages.xml"
   # set the extensions list of files
-  VDM_README_FILES_MD="${PACKAGE_DIR}/README_FILES.md"
+  VDM_README_FILES_MD="${VDM_MAIN_DIR}/README_FILES.md"
   # set the README
   VDM_README_MD="${VDM_PACKAGE_DIR}/README.md"
   # set the license file
@@ -889,11 +889,11 @@ function setLicenseFile() {
       echo >&2 "[error] The license:${VDM_LICENSE_FILE} is not a valid URL."
       has_error=true
     fi
-  elif [ -f "${LICENSE_DIR}/${VDM_LICENSE_FILE}" ]; then
+  elif [ -f "${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE}" ]; then
     # now copy the license file
-    cp "${LICENSE_DIR}/${VDM_LICENSE_FILE}" "${VDM_LICENSE_FILE_PATH}"
+    cp "${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE}" "${VDM_LICENSE_FILE_PATH}"
   else
-    echo >&2 "[error] The license:${LICENSE_DIR}/${VDM_LICENSE_FILE} not found."
+    echo >&2 "[error] The license:${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE} not found."
     has_error=true
   fi
   # check if we have some errors
@@ -1199,14 +1199,22 @@ Usage: ${PROGRAM_CODE} [OPTION...]
 	Packager url
 	example: ${PROGRAM_CODE} -pu="https://git.vdm.dev/"
 	======================================================
+   -md | --main-dir=<path>
+	load the main working directory
+	example: ${PROGRAM_CODE} --main-dir=/src
+	======================================================
    -e | --env=<file>
 	load the environment variables file
 	example: ${PROGRAM_CODE} --env=/src/.env
 	======================================================
-   --conf | --config=<path>
+   --conf | --config=<path/url>
 	load the configuration for the package in json format
 	   file-example: src/example.json
 	example: ${PROGRAM_CODE} --config=config.json
+	======================================================
+   -ld | --licence-dir=<path>
+	load the licence directory
+	example: ${PROGRAM_CODE} --licence-dir=/src/licence
 	======================================================
    -t | --token=<access_token>
 	load the global token
@@ -1251,21 +1259,32 @@ START_BUILD=$(date +"%s")
 START_DATE=$(TZ=":ZULU" date +"%m/%d/%Y @ %R (UTC)")
 CREATION_DATE=$(TZ=":ZULU" date +"%B %Y")
 CREATION_YEAR=$(TZ=":ZULU" date +"%Y")
+
 # the quiet switch
 QUIET="${QUIET:-0}"
-# we set the packager directory
+
+# we set the packager directorys
 tmp_path="/home/$USER/${PROGRAM_CODE}"
-PACKAGE_DIR="${PACKAGE_DIR:-$tmp_path}"
+# ALWAYS USE GLOBAL IF SET
+VDM_MAIN_DIR="${VDM_MAIN_DIR:-$tmp_path}"
+
 # we set the licenses directory
-tmp_path="/home/$USER/${PROGRAM_CODE}/licenses"
+tmp_path="${VDM_MAIN_DIR}/licenses"
+[ -d "$tmp_path" ] || tmp_path="/home/$USER/${PROGRAM_CODE}/licenses"
 # if path not set try $PWD path
 [ -d "$tmp_path" ] || tmp_path="$PWD"
-LICENSE_DIR="${LICENSE_DIR:-$tmp_path}"
-# the environment variables path
+# ALWAYS USE GLOBAL IF SET
+VDM_LICENSE_DIR="${VDM_LICENSE_DIR:-$tmp_path}"
+
+# the environment file variables path
 tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.env"
-# if path not set try $PWD path
-[ -f "$tmp_path" ] || tmp_path="$PWD/.env"
+# if file not set try $PWD path
+[ -f "$tmp_path" ] || tmp_path="$PWD/.env_${PROGRAM_CODE}"
+# if file not set try $VDM_MAIN_DIR path
+[ -f "$tmp_path" ] || tmp_path="$VDM_MAIN_DIR/.env_${PROGRAM_CODE}"
+# ALWAYS USE GLOBAL IF SET
 VDM_ENV_FILE_PATH="${VDM_ENV_FILE_PATH:-$tmp_path}"
+
 # clear this tmp out
 unset tmp_path
 
@@ -1287,6 +1306,13 @@ while :; do
     runUpdate
     shift
     ;;
+  -md=* | --main-dir=*)
+    VDM_MAIN_DIR=${1#*=}
+    if [ -z "$VDM_MAIN_DIR" ]; then
+      echo '[error] "--main-dir" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
   -e=* | --env=*)
     VDM_ENV_FILE_PATH=${1#*=}
     if [ -z "$VDM_ENV_FILE_PATH" ]; then
@@ -1298,6 +1324,13 @@ while :; do
     VDM_PACKAGE_CONF_FILE=${1#*=}
     if [ -z "$VDM_PACKAGE_CONF_FILE" ]; then
       echo '[error] "--conf" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  -ld=* | --licence-dir=*)
+    VDM_LICENSE_DIR=${1#*=}
+    if [ -z "$VDM_LICENSE_DIR" ]; then
+      echo '[error] "--licence-dir" requires a non-empty option argument.'
       exit 17
     fi
     ;;
@@ -1365,6 +1398,9 @@ fi
 
 # if path not set try $PWD path (so you can open a folder that has .octojpack file and it will be loaded)
 tmp_path="$PWD/.${PROGRAM_CODE}"
+# if file not set try $VDM_MAIN_DIR path
+[ -f "$tmp_path" ] || tmp_path="$VDM_MAIN_DIR/.${PROGRAM_CODE}"
+# ALWAYS USE GLOBAL IF SET
 VDM_PACKAGE_CONF_FILE=${VDM_PACKAGE_CONF_FILE:-$tmp_path}
 
 # Check if the config file is passed as a URL
@@ -1372,14 +1408,14 @@ if [[ "$VDM_PACKAGE_CONF_FILE" =~ ^http: ]] || [[ "$VDM_PACKAGE_CONF_FILE" =~ ^h
   # Check if the URL is valid
   if curl --output /dev/null --silent --head --fail "$VDM_PACKAGE_CONF_FILE"; then
     # Create the directory for the configuration file if it doesn't exist
-    mkdir -p "$HOME/.config/$PROGRAM_CODE"
+    mkdir -p "$HOME/.config/$PROGRAM_CODE/projects"
 
     # get a file name
     file_name=$(getUniqueFileName "$VDM_PACKAGE_CONF_FILE")
 
     # Download the configuration file
-    curl --silent "$VDM_PACKAGE_CONF_FILE" -o "$HOME/.config/$PROGRAM_CODE/${file_name}_conf.json"
-    VDM_PACKAGE_CONF_FILE="$HOME/.config/$PROGRAM_CODE/${file_name}_conf.json"
+    curl --silent "$VDM_PACKAGE_CONF_FILE" -o "$HOME/.config/$PROGRAM_CODE/projects/${file_name}_conf.json"
+    VDM_PACKAGE_CONF_FILE="$HOME/.config/$PROGRAM_CODE/projects/${file_name}_conf.json"
   else
     # Print an error message and exit if the URL is invalid
     echo >&2 "[error] The config file at $VDM_PACKAGE_CONF_FILE is not a valid URL. Aborting."
