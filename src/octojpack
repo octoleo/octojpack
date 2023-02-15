@@ -1049,6 +1049,12 @@ function setUserDetails () {
     _echo "[info] Git GPG sign set to: ${GIT_GPG_SIGN}"
   fi
 
+  # Set signing key
+  if [ -n "${GIT_SIGNING_KEY+x}" ]; then
+    git config commit.signingkey "${GIT_SIGNING_KEY}"
+    _echo "[info] Git signing key set to: ${GIT_SIGNING_KEY}"
+  fi
+
   # Set Git SSH key path
   if [ -n "${GIT_SSH_KEY_PATH+x}" ]; then
     git config core.sshCommand "ssh -i ${GIT_SSH_KEY_PATH}"
