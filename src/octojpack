@@ -3,8 +3,8 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.0.2"
-PROGRAM_V="1.0"
+PROGRAM_VERSION="1.1.0"
+PROGRAM_V="1.1"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
 # Do some prep work
@@ -473,7 +473,7 @@ function getFileByTag() {
   if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" ]; then
     # give message
     _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
-    curl -s -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip?access_token=${VDM_TOKEN}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
+    curl -s -H "Authorization: token ${VDM_TOKEN}" -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
   else
     # zip already set
     _echo "[error] ${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip already set."
@@ -528,7 +528,7 @@ function getFileByRelease() {
       }
       # give message
       _echo "[info] Downloading the (${VDM_OWNER}-${asset_zip_file_name}) package."
-      curl -s -L "${VDM_ASSET_DOWNLOAD}?access_token=${VDM_TOKEN}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${asset_zip_file_name}"
+      curl -s -H "Authorization: token ${VDM_TOKEN}" -L "${VDM_ASSET_DOWNLOAD}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${asset_zip_file_name}"
       # so we got a file
       has_files=true
       # add to xml file
@@ -564,7 +564,7 @@ function getFileByKey() {
     # give message
     _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
     # download the zip file
-    curl -s -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip?access_token=${VDM_TOKEN}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
+    curl -s -H "Authorization: token ${VDM_TOKEN}" -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
   else
     # zip already set
     _echo "[error] ${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip already set."
@@ -634,7 +634,7 @@ function callGiteaAPI() {
   # give message
   _echo "[info] Getting ${mode} information from ${owner}/${repo} repository."
   # get the zip packages
-  zip_packages=$(curl -s -X 'GET' "${api}/repos/${owner}/${repo}/${mode}?access_token=${token}" -H 'accept: application/json')
+  zip_packages=$(curl -s -H "Authorization: token ${token}" -H 'accept: application/json' -X 'GET' "${api}/repos/${owner}/${repo}/${mode}")
   # check for error
   if [[ "${zip_packages}" =~ '"errors"' ]] && [[ "${zip_packages}" =~ '"message"' ]]; then
     # get the message
