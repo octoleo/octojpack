@@ -3,8 +3,8 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.1.0"
-PROGRAM_V="1.1"
+PROGRAM_VERSION="1.2.0"
+PROGRAM_V="1.2"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
 # Do some prep work
@@ -134,6 +134,7 @@ function getRepositoryDetails() {
     # get the global config values if not set
     getConfigValue 'VDM_PACKAGE_OWNER' '.repository.owner' || has_error=true
     getConfigValue 'VDM_PACKAGE_REPO' '.repository.repo' || has_error=true
+    getConfigValue 'VDM_PACKAGE_REPO_BRANCH' '.repository.branch' false || VDM_PACKAGE_REPO_BRANCH="default"
     getConfigValue 'VDM_PACKAGE_TOKEN_NAME' '.repository.token_name' false || VDM_PACKAGE_TOKEN_NAME="VDM_GLOBAL_TOKEN"
     getConfigValue 'VDM_PACKAGE_URL_NAME' '.repository.url_name' false || VDM_PACKAGE_URL_NAME="VDM_GLOBAL_URL"
     getConfigValue 'VDM_PACKAGE_API_NAME' '.repository.api_name' false || VDM_PACKAGE_API_NAME="VDM_GLOBAL_API"
@@ -144,6 +145,7 @@ function getRepositoryDetails() {
     VDM_PACKAGE_URL=${!VDM_PACKAGE_URL_NAME}
     VDM_PACKAGE_API=${!VDM_PACKAGE_API_NAME}
     # make globally available
+    export VDM_PACKAGE_REPO_BRANCH
     export VDM_PACKAGE_TOKEN
     export VDM_PACKAGE_URL
     export VDM_PACKAGE_API
@@ -161,6 +163,7 @@ function clearMainEnv() {
   # SET IN: getRepositoryDetails
   unset VDM_PACKAGE_OWNER
   unset VDM_PACKAGE_REPO
+  unset VDM_PACKAGE_REPO_BRANCH
   unset VDM_PACKAGE_TOKEN_NAME
   unset VDM_PACKAGE_TOKEN
   unset VDM_PACKAGE_API_NAME
@@ -997,8 +1000,13 @@ function setRepository() {
 function getExistingRepository() {
   # little information of progress
   _echo "[info] Getting (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
-  # clone the existing repository
-  git clone "ssh://git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
+  if [ "${VDM_PACKAGE_REPO_BRANCH}" = 'default' ]; then
+    # clone the existing repository
+    git clone "ssh://git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
+  else
+    # clone the existing repository
+    git clone -b "${VDM_PACKAGE_REPO_BRANCH}" "ssh://git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
+  fi
   # success
   return 0
 }
@@ -1025,6 +1033,11 @@ function setGitRepository() {
   _echo "[info] Adding remote branch to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
   # add the remote branch
   git remote add origin "ssh://git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 29
+  # Check if a specific branch is set and it is not 'default'
+  if [ "${VDM_PACKAGE_REPO_BRANCH}" != "default" ]; then
+    _echo "[info] Setting branch to ${VDM_PACKAGE_REPO_BRANCH}"
+    git checkout -b "${VDM_PACKAGE_REPO_BRANCH}" >/dev/null 2>&1 || return 29
+  fi
   #success
   return 0
 }
