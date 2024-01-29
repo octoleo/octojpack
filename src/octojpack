@@ -3,8 +3,8 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.2.0"
-PROGRAM_V="1.2"
+PROGRAM_VERSION="1.3.0"
+PROGRAM_V="1.3"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
 # Do some prep work
@@ -20,10 +20,14 @@ command -v jq >/dev/null 2>&1 || {
   echo >&2 "[error] We require jq for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not installed.  Aborting."
   exit 1
 }
+command -v unzip >/dev/null 2>&1 || {
+  echo >&2 "[error] We require unzip for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not installed.  Aborting."
+  exit 1
+}
 
 # main function ˘Ô≈ôﺣ
 function main() {
-  # check if we have project overides for the environment variables
+  # check if we have project overrides for the environment variables
   # shellcheck disable=SC2015
   [ -f "$VDM_PACKAGE_CONF_FILE" ] && getProjectEnvironment || {
     echo >&2 "[error] We require config file with correct packaging details for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
@@ -575,30 +579,52 @@ function getFileByReleases() {
 
 # get the file by key
 function getFileByKey() {
+  # set some local values
+  local folder_path
+  local zip_name
   # get the name
   VDM_ZIP_NAME="${VDM_MODE}"
   # get the message
   VDM_ZIP_MESSAGE="${VDM_MODE}"
-  # get the name
-  setValueFromJson "VDM_ZIP_VERSION" ".[0].name" "${VDM_API_BUCKET}" || {
-    _echo "[error] Tag name not found in VDM_API_BUCKET. (but ignored since we are getting file by key)"
-    VDM_ZIP_VERSION="${VDM_MODE}"
-  }
+  # set the zip name
+  zip_name="${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
+  # set the folder path
+  folder_path="${VDM_OWNER}_${VDM_REPO}_${VDM_ZIP_NAME}"
   # download the zip file if not already set
-  if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" ]; then
+  if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${zip_name}" ]; then
     # give message
     _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
     # download the zip file
-    curl -s -H "Authorization: token ${VDM_TOKEN}" -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
+    curl -s -H "Authorization: token ${VDM_TOKEN}" -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip" -o "${VDM_PACKAGE_SRC_DIR}/${zip_name}"
   else
     # zip already set
-    _echo "[error] ${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip already set."
+    _echo "[error] ${zip_name} already set."
     return 12
   fi
+  # unzip this zip file
+  _unzip "${zip_name}" "${folder_path}" || {
+    _echo "[error] We encountered and error, we could not unzip (${VDM_PACKAGE_SRC_DIR}/${zip_name}) in to (${VDM_PACKAGE_GIT_DIR}/${folder_path})"
+    # so we skip this package
+    return 12
+  }
+  # check if we have a folder to access
+  if ! cd "${VDM_PACKAGE_GIT_DIR}/${folder_path}"; then
+    _echo "[error] We could not open the package folder."
+    exit 13
+  fi
+  # get the version from the current directory
+  _xml_version || {
+    _echo "[error] Version name not found in package. (but ignored since we are getting file by key)"
+    VDM_ZIP_VERSION="${VDM_MODE}"
+    export VDM_ZIP_VERSION
+  }
+  # move out of the directory
+  cd "${VDM_MAIN_DIR}" || exit 13
+  # always remove the package folder again
+  rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${folder_path:?}"
   # move the tag values to global scope
   export VDM_ZIP_NAME
   export VDM_ZIP_MESSAGE
-  export VDM_ZIP_VERSION
   # add file to xml
   setFileToXML
   # update the readme
@@ -1142,12 +1168,85 @@ function getUniqueFileName() {
   echo "${hash:0:10}"
 }
 
+# get the version from the current directory
+function _xml_version() {
+  local version
+  local len=100
+  local file
+  local v
+  local e
+  local p
+  # Create a list of all XML files in the current directory.
+  find . -type f -name '*.xml'  > tmp
+  # Loop through the list of XML files.
+  while IFS= read -r file
+  do
+    # Skip XML files named config.xml, access.xml, or default.xml.
+    if [[ "$file" == *"config.xml" ]] || [[ "$file" == *"access.xml" ]] || [[ "$file" == *"default.xml" ]]; then
+      continue
+    fi
+    # Retrieve the version number from the XML file.
+    v=$(grep -o -P '(?<=\<version>).*?(?=\</version>)' "$file")
+    # Check if the file is an update server file (which should not be used).
+    e=$(grep -o -P '\<extension' "$file")
+    # If a version number have been retrieved, and the file is not an update server file, continue processing.
+    if [ -n "$v" ] && [ -n "$e" ]; then
+      # Count the folder depth.
+      # shellcheck disable=SC2001
+      p=$(echo "$file" | sed 's|[^/]||g')
+      # Keep the value of the shortest path.
+      if [[ "${#p}" -lt $len ]]; then
+        # Update the length.
+        len="${#p}"
+        # Set the version.
+        version="$v"
+      fi
+    fi
+    # Clear variables for each loop.
+    unset v
+    unset n
+    unset e
+  done < tmp
+
+  # Clear variables for each loop.
+  rm tmp
+
+  # If a version number was found and starts with v
+  if [ -z "$version" ]; then
+    return 14
+  elif [[ $version != v* ]]; then
+    version="v${version}"
+  fi
+
+  VDM_ZIP_VERSION="$version"
+  export VDM_ZIP_VERSION
+
+  return 0
+}
+
 # give the echo messages
 # only if not set to be quiet
 function _echo() {
   if (("$QUIET" == 0)); then
     echo "$1"
   fi
+}
+
+# Unzip a zip file
+function _unzip() {
+  # Set some locals.
+  local zip_name="${1}"
+  local folder_name="${2}"
+
+  # Unzip the contents of the `zip_name` file to the specified `folder_name`.
+  # Use process substitution to pass the output of `unzip` to `cat`.
+  if cat < <(unzip "${VDM_PACKAGE_SRC_DIR}/$zip_name" -d "${VDM_PACKAGE_GIT_DIR}/$folder_name") >/dev/null 2>&1; then
+    _echo "[info] Successfully unzipped the package ($zip_name)"
+    return 0
+  fi
+
+  # Return 1 if the unzip operation was unsuccessful.
+  return 1
 }
 
 # uninstalls the octojpack program.
