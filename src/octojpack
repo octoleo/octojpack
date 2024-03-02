@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.3.0"
+PROGRAM_VERSION="1.3.1"
 PROGRAM_V="1.3"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -795,10 +795,9 @@ function setPackageXml() {
   _echo "[info] Setting the Package XML..."
   # set the local version
   local version
-  # remove all but numbers and points
-  # TODO we need to allow only stable versions (when getting the tags)
-  # shellcheck disable=SC2001
-  version=$(echo "${VDM_PACKAGE_VERSION:-1.0.0}" | sed 's/[^0-9.]//g')
+  # remove the v in front of the version (number-state-number)
+  version="${VDM_PACKAGE_VERSION:-1.0.0}"
+  version="${version/#v/}"
   # add the package details
   {
     echo '<?xml version="1.0" encoding="utf-8"?>'
