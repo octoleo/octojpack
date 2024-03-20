@@ -1,6 +1,12 @@
-# Octojpack - Easy Joomla Extension Packaging
+<h2><img align="middle" src="https://raw.githubusercontent.com/odb/official-bash-logo/master/assets/Logos/Icons/PNG/64x64.png" >
+Octojpack - Easy Joomla Extension Packaging
+</h2>
+
+Written by Llewellyn van der Merwe (@llewellynvdm)
 
 With this script we can easily package multiple extensions in an automated way from a json configuration file, and environment variables.
+
+Linted by [#ShellCheck](https://github.com/koalaman/shellcheck)
 
 > program only for ubuntu/debian and Gitea systems at this time (should you like to use it on other OS's please open and issue...)
 ---
