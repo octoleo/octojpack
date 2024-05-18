@@ -249,7 +249,7 @@ function setValueFromJson() {
     }
 
     # Safely use eval to dynamically set the value
-    eval "$target_var"=\'"$value"\'
+    declare -g "$target_var"="$value"
 }
 
 # Get value from JSON
