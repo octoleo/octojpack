@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.3.2"
+PROGRAM_VERSION="1.3.3"
 PROGRAM_V="1.3"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -685,7 +685,14 @@ function callGiteaAPI() {
   # give message
   _echo "[info] Getting ${mode} information from ${owner}/${repo} repository."
   # get the json data
-  json_data=$(curl -s -H "Authorization: token ${token}" -H 'accept: application/json' -X 'GET' "${api}/repos/${owner}/${repo}/${mode}")
+  # Check if mode is "tags"
+  if [ "${mode}" = "tags" ]; then
+    url="${api}/repos/${owner}/${repo}/${mode}?page=1"
+  else
+    url="${api}/repos/${owner}/${repo}/${mode}"
+  fi
+  # get the json data
+  json_data=$(curl -s -H "Authorization: token ${token}" -H 'accept: application/json' -X 'GET' "${url}")
   # check for error
   if [[ "${json_data}" =~ '"errors"' ]] && [[ "${json_data}" =~ '"message"' ]]; then
     # get the message
@@ -1004,8 +1011,6 @@ function setRepository() {
   if $update_repo && [[ -z $(git status --porcelain) ]]; then
     _echo "[info] No changes found in (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
   else
-    # add user details
-    setUserDetails
     # check if we must update or create repository
     if $update_repo; then
       # make API call
@@ -1018,6 +1023,8 @@ function setRepository() {
       else
         message="Update"
       fi
+      # add user details
+      setUserDetails
       # get the repository last tag
       makeGitCommit "${message}" "${VDM_PACKAGE_VERSION:-1.0.0}" "$VDM_TAG_EXIST" || return 28
       # give little notice of progress
@@ -1076,6 +1083,8 @@ function setGitRepository() {
   _echo "[info] Initializing the (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
   # initialize the repository
   git init >/dev/null 2>&1 || return 29
+  # add user details
+  setUserDetails
   # add the first commit
   makeGitCommit "First Commit - ${VDM_PACKAGE_VERSION:-1.0.0}" "${VDM_PACKAGE_VERSION:-1.0.0}" >/dev/null 2>&1 || return 28
   # little information of progress
