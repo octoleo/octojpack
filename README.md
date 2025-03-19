@@ -12,7 +12,7 @@ Linted by [#ShellCheck](https://github.com/koalaman/shellcheck)
 ---
 # Install
 ```shell
-$ sudo curl -L "https://git.vdm.dev/api/v1/repos/octoleo/octojpack/raw/src/octojpack" -o /usr/local/bin/octojpack
+$ sudo curl -L "https://raw.githubusercontent.com/octoleo/octojpack/refs/heads/master/src/octojpack" -o /usr/local/bin/octojpack
 $ sudo chmod +x /usr/local/bin/octojpack
 ```
 ---
