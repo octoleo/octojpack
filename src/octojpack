@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.3.6"
+PROGRAM_VERSION="1.3.7"
 PROGRAM_V="1.3"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -995,7 +995,7 @@ function setRepository() {
   # check if the repository exist on our gitea instance
   local update_repo
   # shellcheck disable=SC2015
-  if git ls-remote --exit-code --heads "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" -q >/dev/null 2>&1; then
+  if git ls-remote --exit-code --heads "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1; then
     getExistingRepository || return 23
     update_repo=true
   else
@@ -1009,11 +1009,11 @@ function setRepository() {
   # move all new files into repository
   setRepositoryNewFiles || return 27
   # check if we have changes
-  if $update_repo && [[ -z $(git status --porcelain) ]]; then
+  if [[ "${update_repo}" == true && -z $(git status --porcelain) ]]; then
     _echo "[info] No changes found in (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
   else
     # check if we must update or create repository
-    if $update_repo; then
+    if [[ "${update_repo}" == true ]]; then
       # make API call
       callGiteaAPI "tags" "${VDM_PACKAGE_OWNER}" "${VDM_PACKAGE_REPO}" "${VDM_PACKAGE_API}" "${VDM_PACKAGE_TOKEN}" || return 28
       # check if tag exists
