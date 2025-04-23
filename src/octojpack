@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.3.5"
+PROGRAM_VERSION="1.3.6"
 PROGRAM_V="1.3"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -995,7 +995,7 @@ function setRepository() {
   # check if the repository exist on our gitea instance
   local update_repo
   # shellcheck disable=SC2015
-  if git ls-remote "git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" -q >/dev/null 2>&1; then
+  if git ls-remote --exit-code --heads "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" -q >/dev/null 2>&1; then
     getExistingRepository || return 23
     update_repo=true
   else
@@ -1059,10 +1059,10 @@ function getExistingRepository() {
   _echo "[info] Getting (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
   if [[ "${VDM_PACKAGE_REPO_BRANCH}" == 'default' ]]; then
     # clone the existing repository
-    git clone "git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
+    git clone "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
   else
     # clone the existing repository
-    git clone -b "${VDM_PACKAGE_REPO_BRANCH:-master}" "git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
+    git clone -b "${VDM_PACKAGE_REPO_BRANCH:-master}" "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 23
   fi
   # success
   return 0
@@ -1091,7 +1091,7 @@ function setGitRepository() {
   # little information of progress
   _echo "[info] Adding remote branch to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
   # add the remote branch
-  git remote add origin "git@${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 29
+  git remote add origin "git@${VDM_PACKAGE_URL}:${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.git" >/dev/null 2>&1 || return 29
   # Check if a specific branch is set and it is not 'default'
   if [ "${VDM_PACKAGE_REPO_BRANCH}" != "default" ]; then
     _echo "[info] Setting branch to ${VDM_PACKAGE_REPO_BRANCH}"
