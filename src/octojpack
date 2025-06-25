@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.3.7"
+PROGRAM_VERSION="1.3.8"
 PROGRAM_V="1.3"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -1181,7 +1181,7 @@ function getUniqueFileName() {
   echo "${hash:0:10}"
 }
 
-# get the version from the current directory
+# Get the version from the current directory
 function _xml_version() {
   local version=""
   local shortest_depth=100
@@ -1196,22 +1196,31 @@ function _xml_version() {
       *config.xml|*access.xml|*default.xml) continue ;;
     esac
 
-    # Ensure it's an extension XML and not an update XML
-    grep -q '<extension' "$file" || continue
-
-    # Extract version if present in XML
-    v=$(sed -n 's|.*<version>\([^<]*\)</version>.*|\1|p' "$file")
-
-    # Determine folder depth (count slashes)
-    depth=$(awk -F'/' '{print NF}' <<< "$file")
-
-    # Choose the file with the shortest path (highest in folder stack)
-    if [[ -n "$v" && "$depth" -lt "$shortest_depth" ]]; then
-      shortest_depth="$depth"
-      version="$v"
+    # Ensure it's an extension XML (check if it has a <extension> root tag anywhere)
+    if ! grep -iq '^[[:space:]]*<extension[[:space:]>]' "$file"; then
+      continue
     fi
 
-  done < <(find . -type f -name '*.xml')
+    # Extract version if present in XML
+    v=$(sed -n 's|.*<version>\(.*\)</version>.*|\1|p' "$file" | head -n1)
+
+    # Skip if no version found
+    [[ -z "$v" ]] && continue
+
+    # Determine folder depth (count slashes)
+    depth=$(tr -cd '/' <<< "$file" | wc -c)
+
+    # Choose the file with the shortest path (highest in folder stack)
+    if (( depth < shortest_depth )); then
+      shortest_depth=$depth
+      version=$v
+
+      # Since we want the highest-up file, and this is the shallowest so far,
+      # we can break early if it's at root level (depth 1)
+      (( depth <= 1 )) && break
+    fi
+
+  done < <(find . -type f -iname '*.xml')
 
   # Return failure if no version is found
   if [[ -z "$version" ]]; then
