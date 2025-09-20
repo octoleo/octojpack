@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.3.8"
+PROGRAM_VERSION="1.3.9"
 PROGRAM_V="1.3"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -120,7 +120,8 @@ function getPackageDetails() {
   getConfigValue 'VDM_AUTHOR' '.package.author' || has_error=true
   getConfigValue 'VDM_AUTHOR_EMAIL' '.package.author_email' || has_error=true
   getConfigValue 'VDM_AUTHOR_URL' '.package.author_url' || has_error=true
-  getConfigValue 'VDM_UPDATE_SERVER' '.package.update_servers' || has_error=true
+  getConfigValue 'VDM_UPDATE_SERVER' '.package.update_servers' false || unset VDM_UPDATE_SERVER
+  getConfigValue 'VDM_CHANGELOG_SERVER' '.package.changelog_servers' false || unset VDM_CHANGELOG_SERVER
   # check if we have some errors already
   $has_error && return 13
   # success
@@ -208,6 +209,7 @@ function clearMainEnv() {
   unset VDM_AUTHOR_EMAIL
   unset VDM_AUTHOR_URL
   unset VDM_UPDATE_SERVER
+  unset VDM_CHANGELOG_SERVER
   # SET IN: callGiteaAPI
   unset VDM_API_BUCKET
 }
@@ -881,6 +883,10 @@ function setPackageXml() {
       echo -n "${VDM_UPDATE_SERVER}"
       echo '</server>'
       echo -e '\t</updateservers>'
+    fi
+    # set the changelog server url if found
+    if [ -n "${VDM_CHANGELOG_SERVER}" ]; then
+      echo -e "\t<changelogurl>${VDM_CHANGELOG_SERVER}</changelogurl>"
     fi
     # add the languages
     cat "${VDM_LANGUAGES_XML}"
