@@ -1,0 +1,4 @@
+# The getFileBy* functions are invoked indirectly ("getFileBy${target}"),
+# so ShellCheck reports their bodies as unreachable (SC2317) or the
+# functions as never invoked (SC2329).
+disable=SC2317,SC2329

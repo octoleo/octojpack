@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: ShellCheck
-        run: shellcheck -e SC2317 src/octojpack tests/run-local.sh tests/fake-ssh.sh
+        run: shellcheck src/octojpack tests/run-local.sh tests/fake-ssh.sh
 
       - name: Validate the YAML files
         run: |

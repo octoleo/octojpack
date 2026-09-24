@@ -16,8 +16,11 @@ WORK="$(mktemp -d)"
 MOCK_PID=""
 
 # keep the script away from any real user configuration
+# (the script builds its default paths from USER, so give it a user that has no home)
 export HOME="${WORK}/home"
+export USER="octojpack-tests"
 mkdir -p "${HOME}"
+LOG=""
 unset VDM_ENV_FILE_PATH VDM_PACKAGE_CONF_FILE VDM_MAIN_DIR VDM_LICENSE_DIR GITHUB_OUTPUT VDM_OUTPUT_FILE
 unset VDM_PACKAGE_ZIP VDM_PACKAGE_PUSH VDM_KEEP_FILES VDM_PACKAGE_ZIP_NAME VDM_PACKAGE_ZIP_DIR
 
@@ -25,12 +28,20 @@ cleanup() {
   if [ -n "${MOCK_PID}" ]; then
     kill "${MOCK_PID}" 2>/dev/null || true
   fi
-  rm -rf "${WORK}"
+  if [ -n "${KEEP_WORK:-}" ]; then
+    echo "[info] work directory kept: ${WORK}"
+  else
+    rm -rf "${WORK}"
+  fi
 }
 trap cleanup EXIT
 
 fail() {
   echo "[FAIL] $*" >&2
+  if [ -n "${LOG}" ] && [ -f "${LOG}" ]; then
+    echo "--- last lines of ${LOG}:" >&2
+    tail -n 40 "${LOG}" >&2
+  fi
   exit 1
 }
 
@@ -78,6 +89,12 @@ if ! curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
 fi
 pass "mock Gitea API is running on port ${PORT}"
 
+# the configs point at the mock on the port in use (the checked in files use 8765)
+CONFIG="${WORK}/config.json"
+CONFIG_NO_REPO="${WORK}/config-no-repository.json"
+sed "s#127\.0\.0\.1:8765#127.0.0.1:${PORT}#g" "${HERE}/config.json" >"${CONFIG}"
+sed "s#127\.0\.0\.1:8765#127.0.0.1:${PORT}#g" "${HERE}/config-no-repository.json" >"${CONFIG_NO_REPO}"
+
 ########################################################################
 echo "== test 1: full config (tags, releases, branch), zip, no push, keep files, output file"
 ########################################################################
@@ -85,7 +102,7 @@ MAIN="${WORK}/t1"
 OUT="${WORK}/t1.out"
 LOG="${WORK}/t1.log"
 mkdir -p "${MAIN}"
-run_octojpack --conf="${HERE}/config.json" --main-dir="${MAIN}" --licence-dir="${HERE}/licenses" \
+run_octojpack --conf="${CONFIG}" --main-dir="${MAIN}" --licence-dir="${HERE}/licenses" \
   --url="gitea.test" --zip --no-push --keep-files --output="${OUT}" >"${LOG}" 2>&1 ||
   fail "test 1 script failed: $(cat "${LOG}")"
 pass "test 1 script exit code"
@@ -127,6 +144,7 @@ pass "manifest content"
 [ "$(output_value "${OUT}" version)" = "1.2.3" ] || fail "version output wrong"
 [ "$(output_value "${OUT}" tag)" = "v1.2.3" ] || fail "tag output wrong"
 [ "$(output_value "${OUT}" pushed)" = "false" ] || fail "pushed output wrong"
+[ "$(output_value "${OUT}" repository-status)" = "disabled" ] || fail "repository-status output wrong"
 [ "$(output_value "${OUT}" repository-url)" = "https://gitea.test/tests/pkg-example" ] || fail "repository-url output wrong"
 [ "$(output_value "${OUT}" package-zip-name)" = "pkg_example_v1.2.3.zip" ] || fail "package-zip-name output wrong"
 [ "$(output_value "${OUT}" package-zip-dir)" = "${MAIN}/packages" ] || fail "package-zip-dir output wrong"
@@ -159,7 +177,7 @@ OUT="${WORK}/t2.out"
 LOG="${WORK}/t2.log"
 mkdir -p "${MAIN}"
 GITHUB_OUTPUT="${OUT}" VDM_PACKAGE_ZIP=true VDM_PACKAGE_PUSH=false VDM_KEEP_FILES=no \
-  run_octojpack --conf="${HERE}/config-no-repository.json" --main-dir="${MAIN}" --url="gitea.test" >"${LOG}" 2>&1 ||
+  run_octojpack --conf="${CONFIG_NO_REPO}" --main-dir="${MAIN}" --url="gitea.test" >"${LOG}" 2>&1 ||
   fail "test 2 script failed: $(cat "${LOG}")"
 pass "test 2 script exit code"
 ZIP="$(output_value "${OUT}" package-zip)"
@@ -172,7 +190,10 @@ pass "zip built without a repository section (${ZIP})"
 pass "build files removed, main dir kept"
 [ -z "$(output_value "${OUT}" repository-url)" ] || fail "repository-url should be empty"
 [ "$(output_value "${OUT}" name)" = "Minimal Package" ] || fail "name output wrong"
-jq -e '.repository.owner == "" and .repository.pushed == false and (.extensions | length == 1)' "$(output_value "${OUT}" package-manifest)" >/dev/null || fail "manifest wrong"
+jq -e '.repository.owner == "" and .repository.pushed == false and .repository.status == "disabled" and (.extensions | length == 1)' "$(output_value "${OUT}" package-manifest)" >/dev/null || fail "manifest wrong"
+if [ -f "${MAIN}/files.json" ] || [ -f "${MAIN}/.octojpack_files.json" ]; then
+  fail "scratch files should be removed"
+fi
 assert_contains "$(unzip -Z1 "${ZIP}")" 'LICENSE' "licence from URL"
 pass "test 2 outputs"
 
@@ -198,7 +219,7 @@ echo "== test 4: push enabled (default) without repository details must fail"
 MAIN="${WORK}/t4"
 LOG="${WORK}/t4.log"
 mkdir -p "${MAIN}"
-if run_octojpack --conf="${HERE}/config-no-repository.json" --main-dir="${MAIN}" --url="gitea.test" >"${LOG}" 2>&1; then
+if run_octojpack --conf="${CONFIG_NO_REPO}" --main-dir="${MAIN}" --url="gitea.test" >"${LOG}" 2>&1; then
   fail "test 4 should have failed"
 fi
 assert_contains "$(cat "${LOG}")" 'correct destination repository details' "missing repository details error"
@@ -223,11 +244,13 @@ git init --bare --quiet --initial-branch=master "${REMOTE}/tests/pkg-example.git
 chmod +x "${HERE}/fake-ssh.sh"
 GIT_SSH_COMMAND="${HERE}/fake-ssh.sh" MOCK_GIT_ROOT="${REMOTE}" \
   GIT_AUTHOR_NAME="Octojpack Tests" GIT_AUTHOR_EMAIL="tests@example.org" GIT_GPG_SIGN=false \
-  run_octojpack --conf="${HERE}/config.json" --main-dir="${MAIN}" --licence-dir="${HERE}/licenses" \
+  run_octojpack --conf="${CONFIG}" --main-dir="${MAIN}" --licence-dir="${HERE}/licenses" \
   --url="gitea.test" --zip --keep-files --output="${OUT}" >"${LOG}" 2>&1 ||
   fail "test 6 script failed: $(cat "${LOG}")"
 pass "test 6 script exit code"
 [ "$(output_value "${OUT}" pushed)" = "true" ] || fail "pushed output should be true"
+[ "$(output_value "${OUT}" repository-status)" = "pushed" ] || fail "repository-status should be pushed"
+jq -e '.repository.pushed == true and .repository.status == "pushed"' "$(output_value "${OUT}" package-manifest)" >/dev/null || fail "manifest push status wrong"
 [ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-list --count master)" = "1" ] || fail "remote should have 1 commit"
 git -C "${REMOTE}/tests/pkg-example.git" show-ref --tags --quiet "refs/tags/v1.2.3" || fail "remote should have the v1.2.3 tag"
 TREE="$(git -C "${REMOTE}/tests/pkg-example.git" ls-tree -r --name-only master)"
@@ -249,14 +272,77 @@ LOG="${WORK}/t7.log"
 mkdir -p "${MAIN}"
 GIT_SSH_COMMAND="${HERE}/fake-ssh.sh" MOCK_GIT_ROOT="${REMOTE}" \
   GIT_AUTHOR_NAME="Octojpack Tests" GIT_AUTHOR_EMAIL="tests@example.org" GIT_GPG_SIGN=false \
-  run_octojpack --conf="${HERE}/config.json" --main-dir="${MAIN}" --licence-dir="${HERE}/licenses" \
+  run_octojpack --conf="${CONFIG}" --main-dir="${MAIN}" --licence-dir="${HERE}/licenses" \
   --url="gitea.test" --output="${OUT}" >"${LOG}" 2>&1 ||
   fail "test 7 script failed: $(cat "${LOG}")"
 assert_contains "$(cat "${LOG}")" 'No changes found in (tests/pkg-example) repository' "no changes detected"
 [ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-list --count master)" = "1" ] || fail "remote should still have 1 commit"
+[ "$(output_value "${OUT}" pushed)" = "false" ] || fail "pushed output should be false when nothing changed"
+[ "$(output_value "${OUT}" repository-status)" = "unchanged" ] || fail "repository-status should be unchanged"
 [ -z "$(output_value "${OUT}" package-zip)" ] || fail "no zip expected without --zip"
 [ ! -d "${MAIN}/pkg-example" ] || fail "package dir should be removed without --keep-files"
 pass "legacy behaviour (no zip, files removed) still works"
+
+########################################################################
+echo "== test 8: update an existing repository with changes (new commit and tag pushed)"
+########################################################################
+MAIN="${WORK}/t8"
+OUT="${WORK}/t8.out"
+LOG="${WORK}/t8.log"
+CONFIG_NEXT="${WORK}/config-next.json"
+mkdir -p "${MAIN}"
+# the component now comes from a repository that carries a newer tag (v1.3.0 in the mock)
+jq '(.files[] | select(.repo == "com_example") | .repo) |= "com_example-next"' "${CONFIG}" >"${CONFIG_NEXT}"
+GIT_SSH_COMMAND="${HERE}/fake-ssh.sh" MOCK_GIT_ROOT="${REMOTE}" \
+  GIT_AUTHOR_NAME="Octojpack Tests" GIT_AUTHOR_EMAIL="tests@example.org" GIT_GPG_SIGN=false \
+  run_octojpack --conf="${CONFIG_NEXT}" --main-dir="${MAIN}" --licence-dir="${HERE}/licenses" \
+  --url="gitea.test" --zip --output="${OUT}" >"${LOG}" 2>&1 ||
+  fail "test 8 script failed"
+pass "test 8 script exit code"
+[ "$(output_value "${OUT}" tag)" = "v1.3.0" ] || fail "tag output should be v1.3.0"
+[ "$(output_value "${OUT}" pushed)" = "true" ] || fail "pushed output should be true"
+[ "$(output_value "${OUT}" repository-status)" = "pushed" ] || fail "repository-status should be pushed"
+[ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-list --count master)" = "2" ] || fail "remote should have 2 commits"
+git -C "${REMOTE}/tests/pkg-example.git" show-ref --tags --quiet "refs/tags/v1.3.0" || fail "remote should have the v1.3.0 tag"
+assert_contains "$(git -C "${REMOTE}/tests/pkg-example.git" ls-tree -r --name-only master)" 'src/tests__com_example-next__v1.3.0.zip' "remote tree updated"
+[ -f "${MAIN}/packages/pkg_example_v1.3.0.zip" ] || fail "zip for the new version not found"
+pass "existing repository updated with a new commit and tag"
+
+########################################################################
+echo "== test 9: hardening (cli precedence, relative paths, no env leaks, safe names)"
+########################################################################
+MAIN="${WORK}/t9"
+OUT="${WORK}/t9.out"
+LOG="${WORK}/t9.log"
+CONFIG_HARD="${WORK}/config-hardening.json"
+ENV_FILE="${WORK}/t9.env"
+mkdir -p "${MAIN}/cwd"
+# a name that matches an environment variable must not resolve to it, and
+# a package name with path separators must stay inside the main directory
+jq 'del(.repository) | .package.name = "VDM_GLOBAL_TOKEN" | .package.description = "HOME" | .package.package_name = "../../pkg_escape"' "${CONFIG_NO_REPO}" >"${CONFIG_HARD}"
+# the env file tries to force a push and a different zip name, the command line must win
+printf 'VDM_PACKAGE_PUSH=1\nVDM_PACKAGE_ZIP_NAME="from-env.zip"\n' >"${ENV_FILE}"
+(cd "${MAIN}/cwd" && VDM_GLOBAL_TOKEN="test-token" VDM_GLOBAL_API="${API}" bash "${SCRIPT}" --env="${ENV_FILE}" \
+  --conf="${CONFIG_HARD}" --main-dir="${MAIN}" --url="gitea.test" --zip --zip-name="from-cli.zip" --zip-dir="dist" \
+  --no-push --output="results.out" >"${LOG}" 2>&1) || fail "test 9 script failed"
+pass "test 9 script exit code"
+OUT="${MAIN}/cwd/results.out"
+[ -f "${OUT}" ] || fail "relative --output should be written relative to the start directory"
+[ -f "${MAIN}/cwd/dist/from-cli.zip" ] || fail "relative --zip-dir should be resolved against the start directory (and --zip-name must win over the env file)"
+pass "relative --output and --zip-dir resolve against the start directory"
+[ "$(output_value "${OUT}" repository-status)" = "disabled" ] || fail "--no-push must win over VDM_PACKAGE_PUSH=1 from the env file"
+pass "command line options take precedence over the env file"
+[ "$(output_value "${OUT}" name)" = "VDM_GLOBAL_TOKEN" ] || fail "a name must never resolve to an environment variable (got: $(output_value "${OUT}" name))"
+assert_contains "$(unzip -p "${MAIN}/cwd/dist/from-cli.zip" README.md)" '# VDM_GLOBAL_TOKEN' "readme name is the literal config value"
+assert_contains "$(unzip -p "${MAIN}/cwd/dist/from-cli.zip" README.md)" 'HOME' "readme description is the literal config value"
+! unzip -p "${MAIN}/cwd/dist/from-cli.zip" README.md | grep -q 'test-token' || fail "the token leaked into the README"
+pass "config values never resolve to environment variables"
+# ../../pkg_escape relative to the main dir would land next to the work dir
+if [ -e "${WORK}/pkg_escape" ] || [ -e "$(dirname "${WORK}")/pkg_escape" ]; then
+  fail "package folder escaped the main directory"
+fi
+[ -d "${MAIN}" ] || fail "main dir must never be removed"
+pass "package folder name is kept inside the main directory"
 
 echo
 echo "All tests passed."

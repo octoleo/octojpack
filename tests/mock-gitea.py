@@ -13,7 +13,7 @@ Endpoints:
   GET  /api/v1/repos/{owner}/{repo}/releases/download/{tag}/{asset}.zip
   GET  /LICENSE
   GET  /install.php
-  GET  /config.json          (the tests/config.json file, served as a URL config)
+  GET  /config.json          (the tests/config.json file, served as a URL config with the live port)
 
 Every unknown repository name returns a Gitea style error payload.
 """
@@ -28,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 TAG_VERSION = "v1.2.3"
+NEXT_TAG_VERSION = "v1.3.0"
 RELEASE_VERSION = "v2.0.0"
 BRANCH_VERSION = "3.0.0"
 
@@ -94,8 +95,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_body(200, b"<?php\n// mock installation script\n", "text/plain")
 
         if path == "/config.json":
-            with open(os.path.join(HERE, "config.json"), "rb") as fh:
-                return self.send_body(200, fh.read(), "application/json")
+            with open(os.path.join(HERE, "config.json"), "r", encoding="utf-8") as fh:
+                config = fh.read().replace("127.0.0.1:8765", self.headers.get("Host", "127.0.0.1:8765"))
+            return self.send_body(200, config.encode(), "application/json")
 
         match = re.match(r"^/api/v1/repos/([^/]+)/([^/]+)/(tags|releases)$", path)
         if match:
@@ -103,11 +105,13 @@ class Handler(BaseHTTPRequestHandler):
             if repo.startswith("missing"):
                 return self.send_error_json("The target couldn't be found.")
             if kind == "tags":
+                # repositories named *-next carry a newer tag (used to test the update path)
+                tag = NEXT_TAG_VERSION if repo.endswith("-next") else TAG_VERSION
                 return self.send_json(200, [{
-                    "name": TAG_VERSION,
-                    "message": f"Release {TAG_VERSION} of {repo}",
+                    "name": tag,
+                    "message": f"Release {tag} of {repo}",
                     "commit": {"sha": "0000000000000000000000000000000000000000"},
-                    "zipball_url": f"{self.base_url()}/api/v1/repos/{owner}/{repo}/archive/{TAG_VERSION}.zip",
+                    "zipball_url": f"{self.base_url()}/api/v1/repos/{owner}/{repo}/archive/{tag}.zip",
                 }])
             asset = f"{repo}_{RELEASE_VERSION}.zip"
             return self.send_json(200, [{

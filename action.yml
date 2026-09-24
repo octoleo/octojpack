@@ -175,17 +175,17 @@ inputs:
     required: false
     default: ''
   git-ssh-key-path:
-    description: 'Path of the SSH private key used for the git push (GIT_SSH_KEY_PATH).'
+    description: 'Path of the SSH private key used for the git push (GIT_SSH_KEY_PATH). Leave empty when octoleo/git-user already configured SSH, it would override that setup.'
     required: false
     default: ''
 
   # ------------------------------------------------------------ behaviour
   zip:
-    description: 'Build the installable package zip file.'
+    description: 'Build the installable package zip file. Boolean inputs accept true/false (also 1/0, yes/no, on/off).'
     required: false
     default: 'true'
   zip-name:
-    description: 'File name of the package zip. Defaults to <package_name>_<version>.zip.'
+    description: 'File name of the package zip. Defaults to <package_name>_<tag>.zip, for example pkg_example_v1.2.3.zip.'
     required: false
     default: ''
   zip-dir:
@@ -284,13 +284,16 @@ outputs:
     description: 'URL of the Gitea package repository.'
     value: ${{ steps.octojpack.outputs.repository-url }}
   pushed:
-    description: 'true when the package was pushed to the Gitea repository.'
+    description: 'true when a commit was actually pushed to the Gitea repository.'
     value: ${{ steps.octojpack.outputs.pushed }}
+  repository-status:
+    description: 'pushed (a commit was pushed), unchanged (push enabled but nothing changed) or disabled (push is false).'
+    value: ${{ steps.octojpack.outputs.repository-status }}
   extensions:
     description: 'JSON array of the bundled extensions (owner, repo, url, type, id, mode, ref, version, message, file, group/client).'
     value: ${{ steps.octojpack.outputs.extensions }}
   artifact-name:
-    description: 'Name of the uploaded artifact (use it with actions/download-artifact).'
+    description: 'Name of the uploaded artifact (use it with actions/download-artifact). Empty when nothing was uploaded.'
     value: ${{ steps.artifact.outputs.name }}
   artifact-id:
     description: 'Id of the uploaded artifact (empty when not uploaded).'
@@ -303,7 +306,7 @@ runs:
   using: 'composite'
   steps:
     - name: Install missing dependencies
-      if: inputs.install-dependencies == 'true'
+      if: contains(fromJSON('["true","1","yes","on","y"]'), inputs.install-dependencies)
       shell: bash
       run: |
         missing=()
@@ -497,14 +500,19 @@ runs:
       shell: bash
       env:
         INPUT_ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        UPLOAD: ${{ contains(fromJSON('["true","1","yes","on","y"]'), inputs.upload-artifact) }}
         ZIP_NAME: ${{ steps.octojpack.outputs.package-zip-name }}
       run: |
-        name="${INPUT_ARTIFACT_NAME:-${ZIP_NAME%.zip}}"
+        # the name is only set when an artifact is uploaded
+        name=""
+        if [ "${UPLOAD}" = "true" ] && [ -n "${ZIP_NAME}" ]; then
+          name="${INPUT_ARTIFACT_NAME:-${ZIP_NAME%.zip}}"
+        fi
         echo "name=${name}" >>"${GITHUB_OUTPUT}"
 
     - name: Upload the package artifact
       id: upload
-      if: inputs.upload-artifact == 'true' && steps.octojpack.outputs.package-zip != ''
+      if: steps.artifact.outputs.name != ''
       uses: actions/upload-artifact@v4
       with:
         name: ${{ steps.artifact.outputs.name }}
@@ -514,11 +522,11 @@ runs:
           ${{ steps.octojpack.outputs.package-sha256-file }}
         if-no-files-found: error
         compression-level: 0
-        overwrite: ${{ inputs.artifact-overwrite }}
+        overwrite: ${{ contains(fromJSON('["true","1","yes","on","y"]'), inputs.artifact-overwrite) }}
         retention-days: ${{ inputs.artifact-retention-days }}
 
     - name: Write the job summary
-      if: inputs.summary == 'true' && steps.octojpack.outputs.package-name != ''
+      if: contains(fromJSON('["true","1","yes","on","y"]'), inputs.summary) && steps.octojpack.outputs.package-name != ''
       shell: bash
       env:
         NAME: ${{ steps.octojpack.outputs.name }}
@@ -531,7 +539,7 @@ runs:
         PACKAGE_SHA256: ${{ steps.octojpack.outputs.package-sha256 }}
         PACKAGE_MANIFEST: ${{ steps.octojpack.outputs.package-manifest }}
         REPOSITORY_URL: ${{ steps.octojpack.outputs.repository-url }}
-        PUSHED: ${{ steps.octojpack.outputs.pushed }}
+        REPOSITORY_STATUS: ${{ steps.octojpack.outputs.repository-status }}
         EXTENSIONS: ${{ steps.octojpack.outputs.extensions }}
         ARTIFACT_NAME: ${{ steps.artifact.outputs.name }}
         ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
@@ -554,7 +562,7 @@ runs:
             echo "| Artifact | not uploaded |"
           fi
           if [ -n "${REPOSITORY_URL}" ]; then
-            echo "| Repository | ${REPOSITORY_URL} (pushed: ${PUSHED}) |"
+            echo "| Repository | ${REPOSITORY_URL} (${REPOSITORY_STATUS}) |"
           fi
           echo ""
           echo "#### Bundled extensions"

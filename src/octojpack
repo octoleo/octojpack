@@ -28,6 +28,11 @@ command -v unzip >/dev/null 2>&1 || {
 # make sure we have a user name (CI containers do not always set USER)
 USER="${USER:-$(id -un 2>/dev/null || echo "${PROGRAM_CODE}")}"
 
+# the language strings of the packager language (used to resolve the package name and description)
+declare -gA VDM_LANG_STRINGS=()
+# the options given on the command line (they take precedence over the env files)
+declare -ga CLI_OPTIONS=()
+
 # main function ˘Ô≈ôﺣ
 function main() {
   # check if we have project overrides for the environment variables
@@ -77,7 +82,11 @@ function main() {
     exit 1
   }
   # set the installation file
-  setInstallFile
+  setInstallFile || {
+    echo >&2 "[error] We could not set the installation script file for ${VDM_PACKAGE_NAME}.  Aborting."
+    clearMainEnv
+    exit 1
+  }
   # build the package zip file (if requested)
   if _is_true "${VDM_PACKAGE_ZIP}"; then
     setPackageZip || {
@@ -97,7 +106,11 @@ function main() {
     _echo "[info] Skipping the git repository push (push is disabled)..."
   fi
   # write the build results (manifest and outputs)
-  setOutputs
+  setOutputs || {
+    echo >&2 "[error] We could not write the build results for ${VDM_PACKAGE_NAME}.  Aborting."
+    clearMainEnv
+    exit 1
+  }
   # remove all files (unless we must keep them)
   if _is_true "${VDM_KEEP_FILES}"; then
     _echo "[info] Keeping the package files in (${VDM_PACKAGE_DIR})..."
@@ -154,8 +167,8 @@ function getPackageDetails() {
 
 # set the target repository details
 function getRepositoryDetails() {
-  # make sure we have package details
-  if [[ "${VDM_CONFIG_DATA}" =~ '"repository"' ]]; then
+  # make sure we have repository details (in the config, or given via the environment)
+  if [[ "${VDM_CONFIG_DATA}" =~ '"repository"' ]] || { [ -n "${VDM_PACKAGE_OWNER}" ] && [ -n "${VDM_PACKAGE_REPO}" ]; }; then
     # little information of progress
     _echo "[info] Loading the Repository Details..."
     # check for errors
@@ -169,6 +182,11 @@ function getRepositoryDetails() {
     getConfigValue 'VDM_PACKAGE_API_NAME' '.repository.api_name' false || VDM_PACKAGE_API_NAME="VDM_GLOBAL_API"
     # check if we have some errors already
     $has_error && return 17
+    # make sure the names are safe to use in paths and git urls
+    if ! _valid_name "${VDM_PACKAGE_OWNER}" || ! _valid_name "${VDM_PACKAGE_REPO}"; then
+      echo >&2 "[error] The repository (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) has an invalid owner or repository name."
+      return 17
+    fi
     # set the package (api/url/toke)
     VDM_PACKAGE_TOKEN=${!VDM_PACKAGE_TOKEN_NAME}
     VDM_PACKAGE_URL=${!VDM_PACKAGE_URL_NAME}
@@ -216,6 +234,8 @@ function clearMainEnv() {
   unset VDM_PACKAGE_ZIP_SHA256_FILE
   # SET IN: setOutputs
   unset VDM_PACKAGE_MANIFEST
+  # SET IN: setRepository
+  unset VDM_REPOSITORY_STATUS
   # SET IN: getPackageDetails
   unset VDM_CONFIG_DATA
   unset VDM_PACKAGER
@@ -326,7 +346,8 @@ function setPackageDir() {
   # little information of progress
   _echo "[info] Setting the Package Directories..."
   # the package folder name (falls back to the package name when no repository is set)
-  local package_folder="${VDM_PACKAGE_REPO:-${VDM_PACKAGE_NAME,,}}"
+  local package_folder
+  package_folder="$(_safe_name "${VDM_PACKAGE_REPO:-${VDM_PACKAGE_NAME,,}}")" || return 12
   # the full project path
   VDM_PACKAGE_DIR="${VDM_MAIN_DIR:?}/${package_folder:?}"
   VDM_PACKAGE_GIT_DIR="${VDM_MAIN_DIR}/git"
@@ -345,7 +366,7 @@ function setPackageDir() {
   # set the extensions list of files
   VDM_README_FILES_MD="${VDM_MAIN_DIR}/README_FILES.md"
   # set the extensions list of files (json, used for the manifest and outputs)
-  VDM_FILES_JSON="${VDM_MAIN_DIR}/files.json"
+  VDM_FILES_JSON="${VDM_MAIN_DIR}/.${PROGRAM_CODE}_files.json"
   # set the README
   VDM_README_MD="${VDM_PACKAGE_DIR}/README.md"
   # set the license file
@@ -403,6 +424,14 @@ function setFiles() {
     getConfigValue 'VDM_ENABLED' ".files[$i].enabled" false || VDM_ENABLED=1
     # check if we have some errors already
     if $has_error; then
+      clearFileEnv
+      # increment
+      ((i++))
+      continue
+    fi
+    # make sure the names are safe to use in paths
+    if ! _valid_name "${VDM_OWNER}" || ! _valid_name "${VDM_REPO}"; then
+      echo >&2 "[error] The file repository (${VDM_OWNER}/${VDM_REPO}) has an invalid owner or repository name, so it was skipped."
       clearFileEnv
       # increment
       ((i++))
@@ -834,9 +863,8 @@ function setLanguages() {
     fi
     # increment
     ((i++))
-    # load the Project name to Readme when found
-    # shellcheck disable=SC1090
-    [ "${vdm_lang_tag}" = "${VDM_PACKAGER_LANG}" ] && source "${language_file_path}"
+    # keep the packager language strings (used to resolve the package name and description)
+    [ "${vdm_lang_tag}" = "${VDM_PACKAGER_LANG}" ] && VDM_LANG_STRINGS["${vdm_lang_key}"]="${vdm_lang_value}"
     # remove values
     clearLangEnv
   done
@@ -1033,6 +1061,10 @@ function setLicenseFile() {
 # set the install file
 function setInstallFile() {
   local has_error=false
+  # a relative file path is relative to the directory the program was started in
+  if [ -n "${VDM_INSTALLATION_FILE}" ] && ! [[ "${VDM_INSTALLATION_FILE}" =~ ^https?: ]]; then
+    VDM_INSTALLATION_FILE="$(_abs_path "${VDM_INSTALLATION_FILE}")"
+  fi
   # check if the installation script file is passed via a URL
   if [[ "${VDM_INSTALLATION_FILE}" =~ ^"http:" ]] || [[ "${VDM_INSTALLATION_FILE}" =~ ^"https:" ]]; then
     # shellcheck disable=SC2143
@@ -1059,8 +1091,11 @@ function setInstallFile() {
 function setRepository() {
   # make sure the SSH key (when set) is also used for the ls-remote and clone calls
   if [ -n "${GIT_SSH_KEY_PATH}" ] && [ -z "${GIT_SSH_COMMAND}" ]; then
-    export GIT_SSH_COMMAND="ssh -i ${GIT_SSH_KEY_PATH}"
+    export GIT_SSH_COMMAND="ssh -i '${GIT_SSH_KEY_PATH}'"
   fi
+  # nothing pushed yet
+  VDM_REPOSITORY_STATUS='unchanged'
+  export VDM_REPOSITORY_STATUS
   # change to git directory
   cd "${VDM_PACKAGE_GIT_DIR}" || return 22
   # check if the repository exist on our gitea instance
@@ -1106,6 +1141,8 @@ function setRepository() {
       if ! $VDM_TAG_EXIST; then
         git push --tags >/dev/null 2>&1 || return 30
       fi
+      # we pushed
+      VDM_REPOSITORY_STATUS='pushed'
     else
       # create new repo
       setGitRepository || return 29
@@ -1118,6 +1155,8 @@ function setRepository() {
         git push -u origin "${VDM_PACKAGE_REPO_BRANCH:-master}" >/dev/null 2>&1 || return 30
       fi
       git push --tags >/dev/null 2>&1 || return 30
+      # we pushed
+      VDM_REPOSITORY_STATUS='pushed'
     fi
   fi
   # success
@@ -1200,7 +1239,7 @@ function setUserDetails () {
 
   # Set Git SSH key path
   if [ -n "${GIT_SSH_KEY_PATH+x}" ]; then
-    git config core.sshCommand "ssh -i ${GIT_SSH_KEY_PATH}"
+    git config core.sshCommand "ssh -i '${GIT_SSH_KEY_PATH}'"
     _echo "[info] Git SSH key path set to: ${GIT_SSH_KEY_PATH}"
   fi
 }
@@ -1322,8 +1361,10 @@ function setPackageZip() {
   _echo "[info] Building the Package Zip..."
   # set the zip directory (default: <main-dir>/packages)
   VDM_PACKAGE_ZIP_DIR="${VDM_PACKAGE_ZIP_DIR:-${VDM_MAIN_DIR}/packages}"
-  # set the zip name (default: <package_name>_<version>.zip)
+  # set the zip name (default: <package_name>_<tag>.zip)
   VDM_PACKAGE_ZIP_NAME="${VDM_PACKAGE_ZIP_NAME:-${VDM_PACKAGE_NAME,,}_${VDM_PACKAGE_VERSION:-1.0.0}.zip}"
+  # make sure the name is safe to use as a file name
+  VDM_PACKAGE_ZIP_NAME="$(_safe_name "${VDM_PACKAGE_ZIP_NAME}")" || return 31
   # make sure we have the zip extension
   [[ "${VDM_PACKAGE_ZIP_NAME}" == *.zip ]] || VDM_PACKAGE_ZIP_NAME="${VDM_PACKAGE_ZIP_NAME}.zip"
   # set the zip path
@@ -1358,6 +1399,7 @@ function setOutputs() {
   local tag
   local version
   local pushed=false
+  local status='disabled'
   local package_dir=''
   local package_xml=''
   local repository_url=''
@@ -1365,15 +1407,18 @@ function setOutputs() {
   # set the version (with and without the v prefix)
   tag="${VDM_PACKAGE_VERSION:-1.0.0}"
   version="${tag/#v/}"
-  # did we push to the git repository
-  _is_true "${VDM_PACKAGE_PUSH}" && pushed=true
+  # did we push to the git repository (pushed, unchanged or disabled)
+  if _is_true "${VDM_PACKAGE_PUSH}"; then
+    status="${VDM_REPOSITORY_STATUS:-unchanged}"
+    [ "${status}" = 'pushed' ] && pushed=true
+  fi
   # the package files are only available when kept
   if _is_true "${VDM_KEEP_FILES}"; then
     package_dir="${VDM_PACKAGE_DIR}"
     package_xml="${VDM_PACKAGE_XML}"
   fi
   # the repository url
-  if [ -n "${VDM_PACKAGE_OWNER}" ] && [ -n "${VDM_PACKAGE_REPO}" ]; then
+  if [ -n "${VDM_PACKAGE_URL}" ] && [ -n "${VDM_PACKAGE_OWNER}" ] && [ -n "${VDM_PACKAGE_REPO}" ]; then
     repository_url="https://${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}"
   fi
   # get the extensions list
@@ -1402,6 +1447,7 @@ function setOutputs() {
       --arg repo "${VDM_PACKAGE_REPO}" \
       --arg branch "${VDM_PACKAGE_REPO_BRANCH}" \
       --arg url "${repository_url}" \
+      --arg status "${status}" \
       --argjson pushed "${pushed}" \
       --argjson extensions "${extensions}" \
       '{
@@ -1417,7 +1463,7 @@ function setOutputs() {
           max_joomla_version: $max_joomla
         },
         zip: {name: $zip, sha256: $sha256},
-        repository: {owner: $owner, repo: $repo, branch: $branch, url: $url, pushed: $pushed},
+        repository: {owner: $owner, repo: $repo, branch: $branch, url: $url, pushed: $pushed, status: $status},
         extensions: $extensions
       }' >"${VDM_PACKAGE_MANIFEST}" || {
       echo >&2 "[error] We could not write the package manifest (${VDM_PACKAGE_MANIFEST})."
@@ -1447,6 +1493,7 @@ function setOutputs() {
     _output 'repository-branch' "${VDM_PACKAGE_REPO_BRANCH}"
     _output 'repository-url' "${repository_url}"
     _output 'pushed' "${pushed}"
+    _output 'repository-status' "${status}"
     _output 'extensions' "${extensions}"
   } >>"${output_file}" || {
     echo >&2 "[error] We could not write the outputs to (${output_file})."
@@ -1464,15 +1511,70 @@ function _output() {
   printf '%s<<%s\n%s\n%s\n' "${key}" "${delimiter}" "${value}" "${delimiter}"
 }
 
-# get the human readable name (resolves language constants when loaded)
+# get the human readable name (resolves the language constants of the packager language)
 function _human_name() {
   local value="${1}"
-  # only a valid variable name can be resolved
-  if [[ "${value}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && [ -n "${!value}" ]; then
-    echo "${!value}"
+  if [ -n "${value}" ] && [ -n "${VDM_LANG_STRINGS[${value}]+x}" ]; then
+    echo "${VDM_LANG_STRINGS[${value}]}"
   else
     echo "${value}"
   fi
+}
+
+# check that a value is a valid owner, repository or branch name (safe in paths and git urls)
+function _valid_name() {
+  [[ "${1}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] && [ "${1}" != '..' ]
+}
+
+# make a value safe to use as a file or folder name (no path separators, never . or ..)
+function _safe_name() {
+  local value="${1}"
+  value="${value//\//_}"
+  value="${value//\\/_}"
+  value="${value//[[:space:]]/_}"
+  if [ -z "${value}" ] || [ "${value}" = '.' ] || [ "${value}" = '..' ]; then
+    echo >&2 "[error] The name (${1}) can not be used as a file or folder name."
+    return 12
+  fi
+  echo "${value}"
+}
+
+# make a path absolute (relative to the directory the program was started in)
+function _abs_path() {
+  case "${1}" in
+  '' | /*)
+    printf '%s' "${1}"
+    ;;
+  *)
+    printf '%s/%s' "${VDM_START_DIR}" "${1}"
+    ;;
+  esac
+}
+
+# set an option given on the command line (and remember it, so the env files can not override it)
+# the fourth argument (path) makes a relative path absolute, since the program changes directory while working
+function setCliOption() {
+  local name="${1}"
+  local value="${2}"
+  local option="${3}"
+  local kind="${4:-}"
+  if [ -z "${value}" ]; then
+    echo "[error] \"${option}\" requires a non-empty option argument."
+    exit 17
+  fi
+  if [ "${kind}" = 'path' ] && ! [[ "${value}" =~ ^https?: ]]; then
+    value="$(_abs_path "${value}")"
+  fi
+  declare -g "${name}=${value}"
+  CLI_OPTIONS+=("${name}=${value}")
+}
+
+# re-apply the options given on the command line (they take precedence over the env files)
+function applyCliOptions() {
+  local option
+  for option in "${CLI_OPTIONS[@]}"; do
+    declare -g "${option%%=*}=${option#*=}"
+  done
 }
 
 # check if a value is true (1, true, yes, on, y)
@@ -1539,6 +1641,8 @@ function getProjectEnvironment() {
     tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.${VDM_CODE_NAME}"
     # shellcheck disable=SC1090
     [ -f "${tmp_path}" ] && source "${tmp_path}"
+    # the command line options take precedence
+    applyCliOptions
     # clear this tmp out
     unset tmp_path
     # success
@@ -1632,7 +1736,7 @@ Usage: ${PROGRAM_CODE} [OPTION...]
 	example: ${PROGRAM_CODE} --zip
 	======================================================
    --zip-name=<file.zip>
-	the file name of the package zip (default: <package_name>_<version>.zip)
+	the file name of the package zip (default: <package_name>_<tag>.zip)
 	   env: VDM_PACKAGE_ZIP_NAME
 	example: ${PROGRAM_CODE} --zip-name=pkg_example_v1.0.0.zip
 	======================================================
@@ -1675,6 +1779,9 @@ Usage: ${PROGRAM_CODE} [OPTION...]
 	example: ${PROGRAM_CODE} -h
 	example: ${PROGRAM_CODE} --help
 	======================================================
+	Options given on the command line take precedence
+	over the values of the .env files.
+	======================================================
 			${PROGRAM_NAME} v${PROGRAM_VERSION}
 	======================================================
 EOF
@@ -1689,6 +1796,9 @@ START_BUILD=$(date +"%s")
 START_DATE=$(TZ=":ZULU" date +"%m/%d/%Y @ %R (UTC)")
 CREATION_DATE=$(TZ=":ZULU" date +"%B %Y")
 CREATION_YEAR=$(TZ=":ZULU" date +"%Y")
+
+# the directory the program was started in (relative paths are resolved against it)
+VDM_START_DIR="${PWD}"
 
 # the quiet switch
 QUIET="${QUIET:-0}"
@@ -1734,6 +1844,7 @@ while :; do
     ;;
   -q | --quiet)
     QUIET=1
+    CLI_OPTIONS+=("QUIET=1")
     ;;
   --uninstall)
     runUninstall
@@ -1744,104 +1855,55 @@ while :; do
     shift
     ;;
   -md=* | --main-dir=*)
-    VDM_MAIN_DIR=${1#*=}
-    if [ -z "$VDM_MAIN_DIR" ]; then
-      echo '[error] "--main-dir" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_MAIN_DIR "${1#*=}" '--main-dir' path
     ;;
   -e=* | --env=*)
-    VDM_ENV_FILE_PATH=${1#*=}
-    if [ -z "$VDM_ENV_FILE_PATH" ]; then
-      echo '[error] "--env" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_ENV_FILE_PATH "${1#*=}" '--env' path
     ;;
   --conf=* | --config=*)
-    VDM_PACKAGE_CONF_FILE=${1#*=}
-    if [ -z "$VDM_PACKAGE_CONF_FILE" ]; then
-      echo '[error] "--conf" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_PACKAGE_CONF_FILE "${1#*=}" '--conf' path
     ;;
   -ld=* | --licence-dir=*)
-    VDM_LICENSE_DIR=${1#*=}
-    if [ -z "$VDM_LICENSE_DIR" ]; then
-      echo '[error] "--licence-dir" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_LICENSE_DIR "${1#*=}" '--licence-dir' path
     ;;
   -p=* | --packager=*)
-    VDM_PACKAGER=${1#*=}
-    if [ -z "$VDM_PACKAGER" ]; then
-      echo '[error] "--packager" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_PACKAGER "${1#*=}" '--packager'
     ;;
   -pu=* | --packager-url=*)
-    VDM_PACKAGER_URL=${1#*=}
-    if [ -z "$VDM_PACKAGER_URL" ]; then
-      echo '[error] "--packager-url" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_PACKAGER_URL "${1#*=}" '--packager-url'
     ;;
   -t=* | --token=*)
-    VDM_GLOBAL_TOKEN=${1#*=}
-    if [ -z "$VDM_GLOBAL_TOKEN" ]; then
-      echo '[error] "--token" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_GLOBAL_TOKEN "${1#*=}" '--token'
     ;;
   -a=* | --api=*)
-    VDM_GLOBAL_API=${1#*=}
-    if [ -z "$VDM_GLOBAL_API" ]; then
-      echo '[error] "--api" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_GLOBAL_API "${1#*=}" '--api'
     ;;
   -u=* | --url=*)
-    VDM_GLOBAL_URL=${1#*=}
-    if [ -z "$VDM_GLOBAL_URL" ]; then
-      echo '[error] "--url" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_GLOBAL_URL "${1#*=}" '--url'
     ;;
   -v=* | --verbosity=*)
-    VDM_VERBOSITY=${1#*=}
-    if [ -z "$VDM_VERBOSITY" ]; then
-      echo '[error] "--verbosity" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_VERBOSITY "${1#*=}" '--verbosity'
     ;;
   --zip)
     VDM_PACKAGE_ZIP=1
+    CLI_OPTIONS+=("VDM_PACKAGE_ZIP=1")
     ;;
   --zip-name=*)
-    VDM_PACKAGE_ZIP_NAME=${1#*=}
-    if [ -z "$VDM_PACKAGE_ZIP_NAME" ]; then
-      echo '[error] "--zip-name" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_PACKAGE_ZIP_NAME "${1#*=}" '--zip-name'
     ;;
   --zip-dir=*)
-    VDM_PACKAGE_ZIP_DIR=${1#*=}
-    if [ -z "$VDM_PACKAGE_ZIP_DIR" ]; then
-      echo '[error] "--zip-dir" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_PACKAGE_ZIP_DIR "${1#*=}" '--zip-dir' path
     ;;
   --no-push)
     VDM_PACKAGE_PUSH=0
+    CLI_OPTIONS+=("VDM_PACKAGE_PUSH=0")
     ;;
   --keep-files)
     VDM_KEEP_FILES=1
+    CLI_OPTIONS+=("VDM_KEEP_FILES=1")
     ;;
   -o=* | --output=*)
-    VDM_OUTPUT_FILE=${1#*=}
-    if [ -z "$VDM_OUTPUT_FILE" ]; then
-      echo '[error] "--output" requires a non-empty option argument.'
-      exit 17
-    fi
+    setCliOption VDM_OUTPUT_FILE "${1#*=}" '--output' path
     ;;
   --) # End of all options.
     shift
@@ -1861,7 +1923,15 @@ done
 if [ -f "$VDM_ENV_FILE_PATH" ]; then
   # shellcheck disable=SC1090
   source "$VDM_ENV_FILE_PATH"
+  # the command line options take precedence
+  applyCliOptions
 fi
+
+# make the paths absolute (the program changes directory while working)
+VDM_MAIN_DIR="$(_abs_path "${VDM_MAIN_DIR}")"
+VDM_LICENSE_DIR="$(_abs_path "${VDM_LICENSE_DIR}")"
+VDM_PACKAGE_ZIP_DIR="$(_abs_path "${VDM_PACKAGE_ZIP_DIR}")"
+VDM_OUTPUT_FILE="$(_abs_path "${VDM_OUTPUT_FILE}")"
 
 # if path not set try $PWD path (so you can open a folder that has .octojpack file and it will be loaded)
 tmp_path="$PWD/.${PROGRAM_CODE}"
@@ -1889,6 +1959,9 @@ if [[ "$VDM_PACKAGE_CONF_FILE" =~ ^http: ]] || [[ "$VDM_PACKAGE_CONF_FILE" =~ ^h
     exit 18
   fi
 fi
+
+# make the config path absolute (the program changes directory while working)
+VDM_PACKAGE_CONF_FILE="$(_abs_path "${VDM_PACKAGE_CONF_FILE}")"
 
 # make sure whe have a configuration file
 [ -f "${VDM_PACKAGE_CONF_FILE}" ] || {

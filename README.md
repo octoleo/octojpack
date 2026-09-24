@@ -71,7 +71,7 @@ Usage: octojpack [OPTION...]
 	example: octojpack --zip
 	======================================================
    --zip-name=<file.zip>
-	the file name of the package zip (default: <package_name>_<version>.zip)
+	the file name of the package zip (default: <package_name>_<tag>.zip)
 	   env: VDM_PACKAGE_ZIP_NAME
 	example: octojpack --zip-name=pkg_example_v1.0.0.zip
 	======================================================
@@ -114,6 +114,9 @@ Usage: octojpack [OPTION...]
 	example: octojpack -h
 	example: octojpack --help
 	======================================================
+	Options given on the command line take precedence
+	over the values of the .env files.
+	======================================================
 			Octojpack v1.4.0
 	======================================================
 ```
@@ -129,7 +132,7 @@ Or with an environment variable you set before using the program like this:
 $ export VDM_ENV_FILE_PATH="/home/username/.config/octojpack/custom.env"
 ```
 
-> Default path is: /home/$USER/.config/octojpack/.env
+> Default path is: /home/$USER/.config/octojpack/.env (when `USER` is not set, as in some containers, the current user name is used)
 
 ### API ACCESS TOKEN (never share your token)
 
@@ -176,15 +179,18 @@ Each switch has a matching environment variable, so they can also be set from th
 | Option | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `--zip` | `VDM_PACKAGE_ZIP=1` | `0` | Build the package zip file. |
-| `--zip-name=<file.zip>` | `VDM_PACKAGE_ZIP_NAME` | `<package_name>_<version>.zip` | File name of the package zip. |
+| `--zip-name=<file.zip>` | `VDM_PACKAGE_ZIP_NAME` | `<package_name>_<tag>.zip` | File name of the package zip, for example `pkg_example_v1.2.3.zip`. |
 | `--zip-dir=<path>` | `VDM_PACKAGE_ZIP_DIR` | `<main-dir>/packages` | Directory that receives the zip, its `.sha256` checksum and its `.json` manifest. |
 | `--no-push` | `VDM_PACKAGE_PUSH=0` | `1` | Do not push to the git repository. The `repository` section of the configuration then becomes optional. |
-| `--keep-files` | `VDM_KEEP_FILES=1` | `0` | Keep the package build directory (`<main-dir>/<repo>`) once done. |
+| `--keep-files` | `VDM_KEEP_FILES=1` | `0` | Keep the package build directory (`<main-dir>/<repo>`, or `<main-dir>/<package_name>` without a `repository` section) once done. |
 | `-o` / `--output=<file>` | `VDM_OUTPUT_FILE` | `$GITHUB_OUTPUT` when set | Append the build results (names, version, paths, extensions) to a file in the GitHub Actions `key<<EOF` output format. |
 
 ```shell
 $ octojpack --conf="/home/username/.config/octojpack/pkg_example.json" --zip --no-push --keep-files --output="/tmp/octojpack.out"
 ```
+
+Options given on the command line take precedence over the values of the .env files, and relative paths are resolved against the directory the program was started in.
+The build results (the `--output` file) report `pushed` as `true` only when a commit was actually pushed; `repository-status` tells you why not otherwise (`unchanged` or `disabled`).
 
 Next to the zip you get `<zip name>.sha256` (verify with `sha256sum -c`) and `<zip name>.json`, a manifest that lists the package details and every bundled extension:
 ```json
@@ -193,7 +199,7 @@ Next to the zip you get `<zip name>.sha256` (verify with `sha256sum -c`) and `<z
   "created": "2026-09-24T10:00:00Z",
   "package": { "name": "Example Package", "package_name": "pkg_example", "code_name": "example", "version": "1.2.3", "tag": "v1.2.3", "min_joomla_version": "4.0", "max_joomla_version": "5.9" },
   "zip": { "name": "pkg_example_v1.2.3.zip", "sha256": "..." },
-  "repository": { "owner": "tests", "repo": "pkg-example", "branch": "default", "url": "https://git.vdm.dev/tests/pkg-example", "pushed": false },
+  "repository": { "owner": "tests", "repo": "pkg-example", "branch": "default", "url": "https://git.vdm.dev/tests/pkg-example", "pushed": false, "status": "disabled" },
   "extensions": [
     { "owner": "tests", "repo": "com_example", "url": "https://git.vdm.dev/tests/com_example", "type": "component", "id": "com_example", "mode": "tags", "ref": "v1.2.3", "version": "v1.2.3", "message": "Release v1.2.3", "file": "src/tests__com_example__v1.2.3.zip" },
     { "owner": "tests", "repo": "plg_system_example", "url": "https://git.vdm.dev/tests/plg_system_example", "type": "plugin", "id": "example", "mode": "releases", "ref": "v2.0.0", "version": "v2.0.0", "message": "Release v2.0.0", "file": "src/tests__plg_system_example_v2.0.0.zip", "group": "system" }
@@ -205,7 +211,7 @@ Next to the zip you get `<zip name>.sha256` (verify with `sha256sum -c`) and `<z
 # GitHub Action
 
 The repository doubles as a composite GitHub Action (see [action.yml](action.yml)).
-It installs nothing on your side: the action runs `src/octojpack` on the runner, passes every input through as the environment variable the script already understands, builds the package zip, uploads it as a workflow artifact and exposes the results as outputs so the next job (or the next workflow) can pick the package up.
+There is nothing to set up: the action runs `src/octojpack` straight from the checkout of the action on the runner (the Ubuntu runners already have git, curl, jq, unzip, zip and wget; a missing tool is installed with apt-get unless `install-dependencies` is false), passes every input through as the environment variable the script already understands, builds the package zip, uploads it as a workflow artifact and exposes the results as outputs so the next job (or the next workflow) can pick the package up.
 
 ## Quick start
 
@@ -225,8 +231,13 @@ jobs:
           url: ${{ vars.GITEA_URL }}               # git.vdm.dev
           api: ${{ vars.GITEA_API }}               # https://git.vdm.dev/api/v1
 
-      - run: echo "Built ${{ steps.package.outputs.package-zip-name }} (${{ steps.package.outputs.package-sha256 }})"
+      - run: echo "Built ${ZIP_NAME} (${SHA256})"
+        env:
+          ZIP_NAME: ${{ steps.package.outputs.package-zip-name }}
+          SHA256: ${{ steps.package.outputs.package-sha256 }}
 ```
+
+Outputs such as names, tags and messages come from your configuration and from the Gitea API, so pass them to `run:` steps through `env:` (as above) rather than interpolating `${{ }}` into the script itself.
 
 The action defaults differ from the command line on purpose, because a workflow usually wants the zip and not a git push:
 
@@ -267,6 +278,7 @@ Since git-user writes these to the global git configuration, this action needs n
 ```
 
 If you prefer to set git up yourself, the `git-author-name`, `git-author-email`, `git-signing-key`, `git-gpg-sign` and `git-ssh-key-path` inputs map to the `GIT_*` environment variables of the script.
+Leave `git-ssh-key-path` empty when git-user is in use: it makes the script call `ssh -i <key>` directly, which bypasses the SSH configuration git-user wrote.
 
 ## Passing the package to the next job
 
@@ -395,6 +407,7 @@ These override the `package` section of the configuration.
 ### Repository overrides
 
 These override the `repository` section of the configuration (the Gitea repository the package is pushed to).
+Giving both `repository-owner` and `repository-repo` also works for a configuration that has no `repository` section at all.
 
 | Input | Environment variable |
 | --- | --- |
@@ -420,7 +433,7 @@ These override the `repository` section of the configuration (the Gitea reposito
 | Input | Default | Description |
 | --- | --- | --- |
 | `zip` | `true` | Build the installable package zip. |
-| `zip-name` | `<package_name>_<version>.zip` | File name of the zip. |
+| `zip-name` | `<package_name>_<tag>.zip` | File name of the zip, for example `pkg_example_v1.2.3.zip`. |
 | `zip-dir` | `<main-dir>/packages` | Directory (relative to the workspace) that receives the zip, checksum and manifest. |
 | `push` | `false` | Push the package to its Gitea repository. |
 | `keep-files` | `true` | Keep the build directory so later steps can use `package-dir`. |
@@ -431,6 +444,8 @@ These override the `repository` section of the configuration (the Gitea reposito
 | `artifact-name` | zip file name without `.zip` | Name of the artifact. |
 | `artifact-retention-days` | repository default | Days to keep the artifact. |
 | `artifact-overwrite` | `true` | Replace an existing artifact with the same name (re-runs). |
+
+Boolean inputs accept `true`/`false` (and also `1`/`0`, `yes`/`no`, `on`/`off`).
 
 ### Custom token, url and api names
 
@@ -468,9 +483,10 @@ Such variables are simply set with `env:` on the step, since the action inherits
 | `package-sha256-file` | Absolute path of the checksum file (`sha256sum -c` format). |
 | `package-manifest` | Absolute path of the JSON manifest. |
 | `repository-owner`, `repository-repo`, `repository-branch`, `repository-url` | The Gitea package repository (empty without a `repository` section). |
-| `pushed` | `true` when the package was pushed to the Gitea repository. |
+| `pushed` | `true` when a commit was actually pushed to the Gitea repository. |
+| `repository-status` | `pushed` (a commit was pushed), `unchanged` (push enabled but nothing changed) or `disabled` (push is `false`). |
 | `extensions` | JSON array of the bundled extensions (`owner`, `repo`, `url`, `type`, `id`, `mode`, `ref`, `version`, `message`, `file`, plus `group` or `client`). |
-| `artifact-name` | Name of the uploaded artifact (for `actions/download-artifact`). |
+| `artifact-name` | Name of the uploaded artifact (for `actions/download-artifact`). Empty when nothing was uploaded. |
 | `artifact-id`, `artifact-url` | Id and URL of the uploaded artifact (empty when not uploaded). |
 
 ## Testing
