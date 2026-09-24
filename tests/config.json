@@ -1,0 +1,74 @@
+{
+  "global": {
+    "packager": "Octojpack Tests",
+    "packager_url": "https://github.com/octoleo/octojpack",
+    "language": "en-GB"
+  },
+  "package": {
+    "name": "PKG_EXAMPLE",
+    "code_name": "example",
+    "package_name": "pkg_example",
+    "min_joomla_version": "4.0",
+    "max_joomla_version": "5.9",
+    "copyright": "Copyright (C) 2021 Llewellyn van der Merwe. All rights reserved.",
+    "copyright_year": "2021",
+    "license": "GNU General Public License version 2; see LICENSE",
+    "license_file": "LICENSE",
+    "installation_file": "http://127.0.0.1:8765/install.php",
+    "author": "Llewellyn van der Merwe",
+    "author_email": "joomla@vdm.io",
+    "author_url": "https://io.vdm.dev",
+    "description": "The example package used by the octojpack test-suite.",
+    "update_servers": "https://example.org/update/pkg_example_update_server.xml",
+    "changelog_servers": "https://example.org/changelog/pkg_example_changelog.xml",
+    "version_id": "com_example"
+  },
+  "repository": {
+    "owner": "tests",
+    "repo": "pkg-example"
+  },
+  "files": [
+    {
+      "owner": "tests",
+      "repo": "com_example",
+      "id": "com_example",
+      "type": "component"
+    },
+    {
+      "owner": "tests",
+      "repo": "plg_system_example",
+      "id": "example",
+      "type": "plugin",
+      "group": "system",
+      "mode": "releases"
+    },
+    {
+      "owner": "tests",
+      "repo": "mod_example",
+      "id": "mod_example",
+      "type": "module",
+      "client": "site",
+      "mode": "branch:master"
+    },
+    {
+      "owner": "tests",
+      "repo": "missing_example",
+      "id": "missing_example",
+      "type": "library"
+    }
+  ],
+  "languages": [
+    {
+      "tag": "en-GB",
+      "ini": "sys.ini",
+      "key": "PKG_EXAMPLE",
+      "value": "Example Package"
+    },
+    {
+      "tag": "en-GB",
+      "ini": "ini",
+      "key": "PKG_EXAMPLE",
+      "value": "Example Package"
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+# Example workflow: build a Joomla package with octojpack and hand it to the next job.
+#
+# Repository variables (Settings > Secrets and variables > Actions > Variables):
+#   GITEA_URL   git.vdm.dev
+#   GITEA_API   https://git.vdm.dev/api/v1
+# Repository secrets:
+#   GITEA_TOKEN  Gitea API access token (read access to the extension repositories)
+#   GPG_KEY, GPG_USER, SSH_KEY, SSH_PUB, GIT_USER, GIT_EMAIL  (only when pushing, see octoleo/git-user)
+name: Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      config:
+        description: 'Path (in this repository) or URL of the package configuration'
+        required: true
+        default: 'src/example.json'
+      push:
+        description: 'Push the package to its Gitea repository (needs the git-user secrets)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build the package
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.package.outputs.name }}
+      package-name: ${{ steps.package.outputs.package-name }}
+      version: ${{ steps.package.outputs.version }}
+      tag: ${{ steps.package.outputs.tag }}
+      package-zip-name: ${{ steps.package.outputs.package-zip-name }}
+      package-sha256: ${{ steps.package.outputs.package-sha256 }}
+      artifact-name: ${{ steps.package.outputs.artifact-name }}
+      artifact-id: ${{ steps.package.outputs.artifact-id }}
+      extensions: ${{ steps.package.outputs.extensions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Sets up the SSH key, known hosts, GPG signing and git identity that a push needs.
+      - name: Setup the git user
+        if: ${{ inputs.push }}
+        uses: octoleo/git-user@v2
+        with:
+          gpg-key: ${{ secrets.GPG_KEY }}
+          gpg-user: ${{ secrets.GPG_USER }}
+          ssh-key: ${{ secrets.SSH_KEY }}
+          ssh-pub: ${{ secrets.SSH_PUB }}
+          git-user: ${{ secrets.GIT_USER }}
+          git-email: ${{ secrets.GIT_EMAIL }}
+          ssh-host: ${{ vars.GITEA_URL }}
+
+      - name: Build the package
+        id: package
+        uses: ./
+        with:
+          config: ${{ inputs.config }}
+          token: ${{ secrets.GITEA_TOKEN }}
+          url: ${{ vars.GITEA_URL }}
+          api: ${{ vars.GITEA_API }}
+          push: ${{ inputs.push }}
+
+  release:
+    name: Use the package
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: package
+
+      - name: Show what we received
+        env:
+          NAME: ${{ needs.build.outputs.name }}
+          TAG: ${{ needs.build.outputs.tag }}
+          PACKAGE_ZIP_NAME: ${{ needs.build.outputs.package-zip-name }}
+          EXTENSIONS: ${{ needs.build.outputs.extensions }}
+        run: |
+          set -euo pipefail
+          echo "Package: ${NAME} ${TAG} (${PACKAGE_ZIP_NAME})"
+          cd package
+          sha256sum -c "${PACKAGE_ZIP_NAME%.zip}.sha256"
+          jq -r '.[] | "- \(.type) \(.id): \(.owner)/\(.repo) @ \(.ref)"' <<<"${EXTENSIONS}"
+          # from here on the zip can be released, uploaded to an update server, deployed, etc.

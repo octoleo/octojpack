@@ -1,0 +1,137 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: ShellCheck
+        run: shellcheck -e SC2317 src/octojpack tests/run-local.sh tests/fake-ssh.sh
+
+      - name: Validate the YAML files
+        run: |
+          python3 - <<'PY'
+          import glob
+          import yaml
+          for path in ["action.yml", *glob.glob(".github/workflows/*.yml")]:
+              with open(path) as handle:
+                  yaml.safe_load(handle)
+              print(f"ok: {path}")
+          PY
+
+  script:
+    name: Script (mock Gitea)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run the end-to-end tests
+        run: bash tests/run-local.sh
+
+  action:
+    name: Action (mock Gitea)
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: ${{ steps.build.outputs.artifact-name }}
+      package-zip-name: ${{ steps.build.outputs.package-zip-name }}
+      package-sha256: ${{ steps.build.outputs.package-sha256 }}
+      version: ${{ steps.build.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start the mock Gitea API
+        run: |
+          nohup python3 tests/mock-gitea.py --port 8765 >"${RUNNER_TEMP}/mock-gitea.log" 2>&1 &
+          for _ in $(seq 1 50); do
+            curl -sf http://127.0.0.1:8765/health >/dev/null 2>&1 && exit 0
+            sleep 0.2
+          done
+          echo "::error::The mock Gitea API did not start"
+          cat "${RUNNER_TEMP}/mock-gitea.log"
+          exit 1
+
+      - name: Build the package with the action
+        id: build
+        uses: ./
+        with:
+          config: tests/config.json
+          licence-dir: tests/licenses
+          token: test-token
+          url: gitea.test
+          api: http://127.0.0.1:8765/api/v1
+          push: false
+          artifact-name: octojpack-test-package
+
+      - name: Check the outputs
+        env:
+          PACKAGE_ZIP: ${{ steps.build.outputs.package-zip }}
+          PACKAGE_ZIP_NAME: ${{ steps.build.outputs.package-zip-name }}
+          PACKAGE_DIR: ${{ steps.build.outputs.package-dir }}
+          PACKAGE_XML: ${{ steps.build.outputs.package-xml }}
+          PACKAGE_MANIFEST: ${{ steps.build.outputs.package-manifest }}
+          PACKAGE_SHA256: ${{ steps.build.outputs.package-sha256 }}
+          PACKAGE_SHA256_FILE: ${{ steps.build.outputs.package-sha256-file }}
+          NAME: ${{ steps.build.outputs.name }}
+          VERSION: ${{ steps.build.outputs.version }}
+          TAG: ${{ steps.build.outputs.tag }}
+          PUSHED: ${{ steps.build.outputs.pushed }}
+          EXTENSIONS: ${{ steps.build.outputs.extensions }}
+          ARTIFACT_NAME: ${{ steps.build.outputs.artifact-name }}
+          ARTIFACT_ID: ${{ steps.build.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          test -f "${PACKAGE_ZIP}"
+          test -f "${PACKAGE_MANIFEST}"
+          test -f "${PACKAGE_SHA256_FILE}"
+          test -f "${PACKAGE_XML}"
+          test -d "${PACKAGE_DIR}"
+          [ "${PACKAGE_ZIP_NAME}" = "pkg_example_v1.2.3.zip" ]
+          [ "${NAME}" = "Example Package" ]
+          [ "${VERSION}" = "1.2.3" ]
+          [ "${TAG}" = "v1.2.3" ]
+          [ "${PUSHED}" = "false" ]
+          [ "${ARTIFACT_NAME}" = "octojpack-test-package" ]
+          [ -n "${ARTIFACT_ID}" ]
+          [ "$(sha256sum "${PACKAGE_ZIP}" | awk '{print $1}')" = "${PACKAGE_SHA256}" ]
+          jq -e 'length == 3' <<<"${EXTENSIONS}"
+          jq -e '.extensions | length == 3' "${PACKAGE_MANIFEST}"
+          unzip -l "${PACKAGE_ZIP}"
+          echo "All action outputs look good."
+
+  consume:
+    name: Next job uses the package
+    needs: action
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.action.outputs.artifact-name }}
+          path: package
+
+      - name: Verify the package
+        env:
+          PACKAGE_ZIP_NAME: ${{ needs.action.outputs.package-zip-name }}
+          PACKAGE_SHA256: ${{ needs.action.outputs.package-sha256 }}
+        run: |
+          set -euo pipefail
+          cd package
+          ls -la
+          sha256sum -c "${PACKAGE_ZIP_NAME%.zip}.sha256"
+          [ "$(sha256sum "${PACKAGE_ZIP_NAME}" | awk '{print $1}')" = "${PACKAGE_SHA256}" ]
+          jq . "${PACKAGE_ZIP_NAME%.zip}.json"

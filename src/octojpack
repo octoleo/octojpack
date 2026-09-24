@@ -3,8 +3,8 @@
 # Program name
 PROGRAM_NAME="Octojpack"
 PROGRAM_CODE="octojpack"
-PROGRAM_VERSION="1.3.9"
-PROGRAM_V="1.3"
+PROGRAM_VERSION="1.4.0"
+PROGRAM_V="1.4"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
 # Do some prep work
@@ -25,6 +25,9 @@ command -v unzip >/dev/null 2>&1 || {
   exit 1
 }
 
+# make sure we have a user name (CI containers do not always set USER)
+USER="${USER:-$(id -un 2>/dev/null || echo "${PROGRAM_CODE}")}"
+
 # main function ˘Ô≈ôﺣ
 function main() {
   # check if we have project overrides for the environment variables
@@ -40,11 +43,14 @@ function main() {
     clearMainEnv
     exit 1
   }
-  # get destination details
+  # get destination details (only required when we push to the git repository)
   getRepositoryDetails || {
-    echo >&2 "[error] We require config file with correct destination repository details for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
-    clearMainEnv
-    exit 1
+    if _is_true "${VDM_PACKAGE_PUSH}"; then
+      echo >&2 "[error] We require config file with correct destination repository details for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
+      clearMainEnv
+      exit 1
+    fi
+    _echo "[info] No repository details found (push is disabled, so we continue)..."
   }
   # build the project package path
   setPackageDir || {
@@ -72,14 +78,32 @@ function main() {
   }
   # set the installation file
   setInstallFile
-  # get package repository
-  setRepository || {
-    echo >&2 "[error] We could not set the GIT repository for ${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.  Aborting."
-    clearMainEnv
-    exit 1
-  }
-  # remove all files
-  clearFiles
+  # build the package zip file (if requested)
+  if _is_true "${VDM_PACKAGE_ZIP}"; then
+    setPackageZip || {
+      echo >&2 "[error] We could not build the package zip file for ${VDM_PACKAGE_NAME}.  Aborting."
+      clearMainEnv
+      exit 1
+    }
+  fi
+  # get package repository (if requested)
+  if _is_true "${VDM_PACKAGE_PUSH}"; then
+    setRepository || {
+      echo >&2 "[error] We could not set the GIT repository for ${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}.  Aborting."
+      clearMainEnv
+      exit 1
+    }
+  else
+    _echo "[info] Skipping the git repository push (push is disabled)..."
+  fi
+  # write the build results (manifest and outputs)
+  setOutputs
+  # remove all files (unless we must keep them)
+  if _is_true "${VDM_KEEP_FILES}"; then
+    _echo "[info] Keeping the package files in (${VDM_PACKAGE_DIR})..."
+  else
+    clearFiles
+  fi
   # clear main env
   clearMainEnv
   # final message
@@ -144,7 +168,7 @@ function getRepositoryDetails() {
     getConfigValue 'VDM_PACKAGE_URL_NAME' '.repository.url_name' false || VDM_PACKAGE_URL_NAME="VDM_GLOBAL_URL"
     getConfigValue 'VDM_PACKAGE_API_NAME' '.repository.api_name' false || VDM_PACKAGE_API_NAME="VDM_GLOBAL_API"
     # check if we have some errors already
-    $has_error && return
+    $has_error && return 17
     # set the package (api/url/toke)
     VDM_PACKAGE_TOKEN=${!VDM_PACKAGE_TOKEN_NAME}
     VDM_PACKAGE_URL=${!VDM_PACKAGE_URL_NAME}
@@ -185,6 +209,13 @@ function clearMainEnv() {
   unset VDM_LANGUAGES_XML
   unset VDM_README_MD
   unset VDM_INSTALL_PHP
+  unset VDM_FILES_JSON
+  # SET IN: setPackageZip
+  unset VDM_PACKAGE_ZIP_PATH
+  unset VDM_PACKAGE_ZIP_SHA256
+  unset VDM_PACKAGE_ZIP_SHA256_FILE
+  # SET IN: setOutputs
+  unset VDM_PACKAGE_MANIFEST
   # SET IN: getPackageDetails
   unset VDM_CONFIG_DATA
   unset VDM_PACKAGER
@@ -218,7 +249,10 @@ function clearMainEnv() {
 function clearFiles() {
   # always remove files
   rm -fr "${VDM_PACKAGE_DIR:?}"
-  rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${VDM_PACKAGE_REPO:?}"
+  [ -n "${VDM_PACKAGE_REPO}" ] && rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${VDM_PACKAGE_REPO}"
+  [ -f "${VDM_FILES_JSON}" ] && rm -f "${VDM_FILES_JSON}"
+  # success
+  return 0
 }
 
 # get value from config
@@ -291,13 +325,15 @@ function getValueFromJson() {
 function setPackageDir() {
   # little information of progress
   _echo "[info] Setting the Package Directories..."
+  # the package folder name (falls back to the package name when no repository is set)
+  local package_folder="${VDM_PACKAGE_REPO:-${VDM_PACKAGE_NAME,,}}"
   # the full project path
-  VDM_PACKAGE_DIR="${VDM_MAIN_DIR}/${VDM_PACKAGE_REPO}"
+  VDM_PACKAGE_DIR="${VDM_MAIN_DIR:?}/${package_folder:?}"
   VDM_PACKAGE_GIT_DIR="${VDM_MAIN_DIR}/git"
   VDM_PACKAGE_SRC_DIR="${VDM_PACKAGE_DIR}/src"
   # always remove previous files (if found)
   rm -fr "${VDM_PACKAGE_DIR:?}"
-  rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${VDM_PACKAGE_REPO:?}"
+  [ -n "${VDM_PACKAGE_REPO}" ] && rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${VDM_PACKAGE_REPO}"
   # set the package language folder
   VDM_PACKAGE_LANG_DIR="${VDM_PACKAGE_DIR}/languages"
   # set the package xml
@@ -308,6 +344,8 @@ function setPackageDir() {
   VDM_LANGUAGES_XML="${VDM_MAIN_DIR}/languages.xml"
   # set the extensions list of files
   VDM_README_FILES_MD="${VDM_MAIN_DIR}/README_FILES.md"
+  # set the extensions list of files (json, used for the manifest and outputs)
+  VDM_FILES_JSON="${VDM_MAIN_DIR}/files.json"
   # set the README
   VDM_README_MD="${VDM_PACKAGE_DIR}/README.md"
   # set the license file
@@ -326,6 +364,7 @@ function setPackageDir() {
   export VDM_README_MD
   export VDM_INSTALL_PHP
   export VDM_LICENSE_FILE_PATH
+  export VDM_FILES_JSON
   # make sure the packages dir is created
   mkdir -p "${VDM_PACKAGE_DIR}" || return 12
   #make sure the src dir is created
@@ -345,6 +384,7 @@ function setFiles() {
   # make sure its reset
   echo -e '\t<files folder="src">' >"${VDM_FILES_XML}"
   echo "" >"${VDM_README_FILES_MD}"
+  : >"${VDM_FILES_JSON}"
   # check for errors
   local has_error=false
   local has_files=false
@@ -535,7 +575,7 @@ function getFileByReleases() {
   }
   # we may have multiple assets (but we only load the first ZIP file we get)
   # because we can only have the ${VDM_ID} only once in the xml file
-  for asset_zip_file_name in $(echo "${VDM_API_BUCKET}" | jq -r '.[0].assets[].name'); do
+  for asset_zip_file_name in $(echo "${VDM_API_BUCKET}" | jq -r '.[0].assets[]?.name'); do
     # make sure we did not already get a file
     $has_files && {
       # increment
@@ -670,6 +710,32 @@ function setFileToXML() {
       echo -n '"'
     echo ">$zip_name</file>"
   } >>"${VDM_FILES_XML}"
+  # add the file details to the json list (used for the manifest and outputs)
+  setFileToJson "${zip_name}"
+}
+
+# set the File Details to JSON
+function setFileToJson() {
+  local zip_name="${1}"
+  local mode="${VDM_MODE}"
+  # anything that is not tags or releases is a branch
+  [ "${mode}" = 'tags' ] || [ "${mode}" = 'releases' ] || mode='branch'
+  # add the file json details (one object per line)
+  jq -cn \
+    --arg owner "${VDM_OWNER}" \
+    --arg repo "${VDM_REPO}" \
+    --arg url "https://${VDM_URL}/${VDM_OWNER}/${VDM_REPO}" \
+    --arg type "${VDM_TYPE}" \
+    --arg id "${VDM_ID}" \
+    --arg key "${VDM_TYPE_KEY}" \
+    --arg val "${VDM_TYPE_VAL}" \
+    --arg mode "${mode}" \
+    --arg ref "${VDM_ZIP_NAME}" \
+    --arg version "${VDM_ZIP_VERSION:-$VDM_ZIP_NAME}" \
+    --arg message "${VDM_ZIP_MESSAGE}" \
+    --arg file "src/${zip_name}" \
+    '{owner: $owner, repo: $repo, url: $url, type: $type, id: $id, mode: $mode, ref: $ref, version: $version, message: $message, file: $file}
+      + (if $key != "" then {($key): $val} else {} end)' >>"${VDM_FILES_JSON}"
 }
 
 # make API call
@@ -728,7 +794,7 @@ function setLanguages() {
   local has_error
   # loop over the repos
   i=0
-  for vdm_lang_tag in $(echo "${VDM_CONFIG_DATA}" | jq -r '.languages[].tag'); do
+  for vdm_lang_tag in $(echo "${VDM_CONFIG_DATA}" | jq -r '.languages[]?.tag'); do
     # check for errors
     has_error=false
     # get the config values needed
@@ -876,7 +942,7 @@ function setPackageXml() {
     if [ -n "${VDM_UPDATE_SERVER}" ]; then
       echo -e '\t<updateservers>'
       echo -en '\t\t<server type="extension" name="'
-      [ -n "${!VDM_NAME}" ] && echo -n "${!VDM_NAME}" || echo -n "${VDM_NAME}"
+      echo -n "$(_human_name "${VDM_NAME}")"
       echo -n ' - Updates" element="'
       echo -n "${VDM_PACKAGE_NAME}"
       echo -n '">'
@@ -906,17 +972,12 @@ function setReadMe() {
   _echo "[info] Setting the README..."
   # add the Project Name to Readme
   {
-    [ -n "${!VDM_NAME}" ] && echo -n "# ${!VDM_NAME}" || echo -n "# ${VDM_NAME}"
+    echo -n "# $(_human_name "${VDM_NAME}")"
     # add the version
     echo " (${VDM_PACKAGE_VERSION:-1.0.0})"
     echo ""
-    # set the Description
-    reg="[[:space:]]+"
-    if [[ "${VDM_DESCRIPTION}" =~ $reg ]]; then
-      echo "${VDM_DESCRIPTION}"
-    else
-      [ -n "${!VDM_DESCRIPTION}" ] && echo "${!VDM_DESCRIPTION}" || echo "${VDM_DESCRIPTION}"
-    fi
+    # set the Description (resolves a language constant when loaded)
+    _human_name "${VDM_DESCRIPTION}"
     echo ""
     echo "## Details"
     echo ""
@@ -996,6 +1057,10 @@ function setInstallFile() {
 
 # get the package repository
 function setRepository() {
+  # make sure the SSH key (when set) is also used for the ls-remote and clone calls
+  if [ -n "${GIT_SSH_KEY_PATH}" ] && [ -z "${GIT_SSH_COMMAND}" ]; then
+    export GIT_SSH_COMMAND="ssh -i ${GIT_SSH_KEY_PATH}"
+  fi
   # change to git directory
   cd "${VDM_PACKAGE_GIT_DIR}" || return 22
   # check if the repository exist on our gitea instance
@@ -1164,16 +1229,20 @@ function makeGitCommit() {
 
 # add all the new files to the repository
 function setRepositoryNewFiles() {
-  # little information of progress
-  _echo "[info] Moving new files into the (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) directory"
-  _echo "[info] Removing the ${VDM_PACKAGE_DIR:?} directory"
-  # move all the new files
-  if [ -d "${VDM_PACKAGE_DIR}" ]; then
+  # make sure we have the package directory
+  [ -d "${VDM_PACKAGE_DIR}" ] || return 27
+  # copy the files when we must keep them, else move them
+  if _is_true "${VDM_KEEP_FILES}"; then
+    # little information of progress
+    _echo "[info] Copying new files into the (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) directory"
+    cp -a "${VDM_PACKAGE_DIR:?}/." "${VDM_PACKAGE_GIT_DIR}/${VDM_PACKAGE_REPO}" >/dev/null 2>&1 || return 27
+  else
+    # little information of progress
+    _echo "[info] Moving new files into the (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) directory"
+    _echo "[info] Removing the ${VDM_PACKAGE_DIR:?} directory"
     mv "${VDM_PACKAGE_DIR:?}/"* "${VDM_PACKAGE_GIT_DIR}/${VDM_PACKAGE_REPO}" >/dev/null 2>&1 &&
       rm -rf "${VDM_PACKAGE_DIR:?}" >/dev/null 2>&1 ||
       return 27
-  else
-    return 27
   fi
   # success
   return 0
@@ -1240,6 +1309,182 @@ function _xml_version() {
   export VDM_ZIP_VERSION="$version"
 
   return 0
+}
+
+# build the package zip file (Joomla installable package)
+function setPackageZip() {
+  # we need the zip command for this
+  command -v zip >/dev/null 2>&1 || {
+    echo >&2 "[error] We require zip to build the package zip file for $PROGRAM_NAME v${PROGRAM_V}, but it's not installed."
+    return 31
+  }
+  # little information of progress
+  _echo "[info] Building the Package Zip..."
+  # set the zip directory (default: <main-dir>/packages)
+  VDM_PACKAGE_ZIP_DIR="${VDM_PACKAGE_ZIP_DIR:-${VDM_MAIN_DIR}/packages}"
+  # set the zip name (default: <package_name>_<version>.zip)
+  VDM_PACKAGE_ZIP_NAME="${VDM_PACKAGE_ZIP_NAME:-${VDM_PACKAGE_NAME,,}_${VDM_PACKAGE_VERSION:-1.0.0}.zip}"
+  # make sure we have the zip extension
+  [[ "${VDM_PACKAGE_ZIP_NAME}" == *.zip ]] || VDM_PACKAGE_ZIP_NAME="${VDM_PACKAGE_ZIP_NAME}.zip"
+  # set the zip path
+  VDM_PACKAGE_ZIP_PATH="${VDM_PACKAGE_ZIP_DIR}/${VDM_PACKAGE_ZIP_NAME}"
+  # make sure the zip directory exists
+  mkdir -p "${VDM_PACKAGE_ZIP_DIR}" || return 31
+  # always remove the previous zip file (if found)
+  rm -f "${VDM_PACKAGE_ZIP_PATH:?}"
+  # build the zip from inside the package directory (so the paths are relative)
+  (cd "${VDM_PACKAGE_DIR}" && zip -qr -X "${VDM_PACKAGE_ZIP_PATH}" .) || return 31
+  # get the checksum
+  VDM_PACKAGE_ZIP_SHA256=$(sha256sum "${VDM_PACKAGE_ZIP_PATH}" | awk '{print $1}') || return 31
+  # write the checksum file (in the format sha256sum -c expects)
+  VDM_PACKAGE_ZIP_SHA256_FILE="${VDM_PACKAGE_ZIP_PATH%.zip}.sha256"
+  echo "${VDM_PACKAGE_ZIP_SHA256}  ${VDM_PACKAGE_ZIP_NAME}" >"${VDM_PACKAGE_ZIP_SHA256_FILE}" || return 31
+  # make globally available
+  export VDM_PACKAGE_ZIP_DIR
+  export VDM_PACKAGE_ZIP_NAME
+  export VDM_PACKAGE_ZIP_PATH
+  export VDM_PACKAGE_ZIP_SHA256
+  export VDM_PACKAGE_ZIP_SHA256_FILE
+  # little information of progress
+  _echo "[info] Package zip created (${VDM_PACKAGE_ZIP_PATH})"
+  # success
+  return 0
+}
+
+# write the build results (manifest file and key=value outputs)
+function setOutputs() {
+  # the output file (GitHub Actions sets GITHUB_OUTPUT)
+  local output_file="${VDM_OUTPUT_FILE:-${GITHUB_OUTPUT:-}}"
+  local tag
+  local version
+  local pushed=false
+  local package_dir=''
+  local package_xml=''
+  local repository_url=''
+  local extensions='[]'
+  # set the version (with and without the v prefix)
+  tag="${VDM_PACKAGE_VERSION:-1.0.0}"
+  version="${tag/#v/}"
+  # did we push to the git repository
+  _is_true "${VDM_PACKAGE_PUSH}" && pushed=true
+  # the package files are only available when kept
+  if _is_true "${VDM_KEEP_FILES}"; then
+    package_dir="${VDM_PACKAGE_DIR}"
+    package_xml="${VDM_PACKAGE_XML}"
+  fi
+  # the repository url
+  if [ -n "${VDM_PACKAGE_OWNER}" ] && [ -n "${VDM_PACKAGE_REPO}" ]; then
+    repository_url="https://${VDM_PACKAGE_URL}/${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}"
+  fi
+  # get the extensions list
+  if [ -s "${VDM_FILES_JSON}" ]; then
+    extensions=$(jq -sc '.' "${VDM_FILES_JSON}") || extensions='[]'
+  fi
+  # write the manifest file (next to the zip file)
+  if [ -n "${VDM_PACKAGE_ZIP_PATH}" ]; then
+    VDM_PACKAGE_MANIFEST="${VDM_PACKAGE_ZIP_PATH%.zip}.json"
+    export VDM_PACKAGE_MANIFEST
+    # little information of progress
+    _echo "[info] Writing the package manifest (${VDM_PACKAGE_MANIFEST})..."
+    jq -n \
+      --arg packager "${PROGRAM_NAME} v${PROGRAM_VERSION}" \
+      --arg created "$(TZ=":ZULU" date +"%Y-%m-%dT%H:%M:%SZ")" \
+      --arg name "$(_human_name "${VDM_NAME}")" \
+      --arg package_name "${VDM_PACKAGE_NAME}" \
+      --arg code_name "${VDM_CODE_NAME}" \
+      --arg version "${version}" \
+      --arg tag "${tag}" \
+      --arg min_joomla "${VDM_MIN_JOOMLA_VERSION}" \
+      --arg max_joomla "${VDM_MAX_JOOMLA_VERSION}" \
+      --arg zip "${VDM_PACKAGE_ZIP_NAME}" \
+      --arg sha256 "${VDM_PACKAGE_ZIP_SHA256}" \
+      --arg owner "${VDM_PACKAGE_OWNER}" \
+      --arg repo "${VDM_PACKAGE_REPO}" \
+      --arg branch "${VDM_PACKAGE_REPO_BRANCH}" \
+      --arg url "${repository_url}" \
+      --argjson pushed "${pushed}" \
+      --argjson extensions "${extensions}" \
+      '{
+        packager: $packager,
+        created: $created,
+        package: {
+          name: $name,
+          package_name: $package_name,
+          code_name: $code_name,
+          version: $version,
+          tag: $tag,
+          min_joomla_version: $min_joomla,
+          max_joomla_version: $max_joomla
+        },
+        zip: {name: $zip, sha256: $sha256},
+        repository: {owner: $owner, repo: $repo, branch: $branch, url: $url, pushed: $pushed},
+        extensions: $extensions
+      }' >"${VDM_PACKAGE_MANIFEST}" || {
+      echo >&2 "[error] We could not write the package manifest (${VDM_PACKAGE_MANIFEST})."
+      unset VDM_PACKAGE_MANIFEST
+    }
+  fi
+  # we only write the outputs when we have an output file
+  [ -n "${output_file}" ] || return 0
+  # little information of progress
+  _echo "[info] Writing the outputs to (${output_file})..."
+  {
+    _output 'name' "$(_human_name "${VDM_NAME}")"
+    _output 'package-name' "${VDM_PACKAGE_NAME}"
+    _output 'code-name' "${VDM_CODE_NAME}"
+    _output 'version' "${version}"
+    _output 'tag' "${tag}"
+    _output 'package-dir' "${package_dir}"
+    _output 'package-xml' "${package_xml}"
+    _output 'package-zip' "${VDM_PACKAGE_ZIP_PATH}"
+    _output 'package-zip-name' "${VDM_PACKAGE_ZIP_NAME}"
+    _output 'package-zip-dir' "${VDM_PACKAGE_ZIP_DIR}"
+    _output 'package-sha256' "${VDM_PACKAGE_ZIP_SHA256}"
+    _output 'package-sha256-file' "${VDM_PACKAGE_ZIP_SHA256_FILE}"
+    _output 'package-manifest' "${VDM_PACKAGE_MANIFEST}"
+    _output 'repository-owner' "${VDM_PACKAGE_OWNER}"
+    _output 'repository-repo' "${VDM_PACKAGE_REPO}"
+    _output 'repository-branch' "${VDM_PACKAGE_REPO_BRANCH}"
+    _output 'repository-url' "${repository_url}"
+    _output 'pushed' "${pushed}"
+    _output 'extensions' "${extensions}"
+  } >>"${output_file}" || {
+    echo >&2 "[error] We could not write the outputs to (${output_file})."
+    return 32
+  }
+  # success
+  return 0
+}
+
+# write one output value (GitHub Actions multiline format)
+function _output() {
+  local key="${1}"
+  local value="${2}"
+  local delimiter="octojpack_${RANDOM}${RANDOM}${RANDOM}"
+  printf '%s<<%s\n%s\n%s\n' "${key}" "${delimiter}" "${value}" "${delimiter}"
+}
+
+# get the human readable name (resolves language constants when loaded)
+function _human_name() {
+  local value="${1}"
+  # only a valid variable name can be resolved
+  if [[ "${value}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && [ -n "${!value}" ]; then
+    echo "${!value}"
+  else
+    echo "${value}"
+  fi
+}
+
+# check if a value is true (1, true, yes, on, y)
+function _is_true() {
+  case "${1,,}" in
+  1 | true | yes | on | y)
+    return 0
+    ;;
+  *)
+    return 1
+    ;;
+  esac
 }
 
 # give the echo messages
@@ -1381,6 +1626,38 @@ Usage: ${PROGRAM_CODE} [OPTION...]
 	Global api of the Gitea instance
 	example: ${PROGRAM_CODE} --api="https://git.vdm.dev/api/v1"
 	======================================================
+   --zip
+	build a zip file of the package (Joomla installable package)
+	   env: VDM_PACKAGE_ZIP=1
+	example: ${PROGRAM_CODE} --zip
+	======================================================
+   --zip-name=<file.zip>
+	the file name of the package zip (default: <package_name>_<version>.zip)
+	   env: VDM_PACKAGE_ZIP_NAME
+	example: ${PROGRAM_CODE} --zip-name=pkg_example_v1.0.0.zip
+	======================================================
+   --zip-dir=<path>
+	the directory where the package zip is placed (default: <main-dir>/packages)
+	   env: VDM_PACKAGE_ZIP_DIR
+	example: ${PROGRAM_CODE} --zip-dir=/src/packages
+	======================================================
+   --no-push
+	do not push the package to the git repository
+	   (the repository config section becomes optional)
+	   env: VDM_PACKAGE_PUSH=0
+	example: ${PROGRAM_CODE} --no-push
+	======================================================
+   --keep-files
+	keep the package build files once done (do not remove them)
+	   env: VDM_KEEP_FILES=1
+	example: ${PROGRAM_CODE} --keep-files
+	======================================================
+   -o | --output=<file>
+	write the build results (names, version, paths) to a file
+	   in the GitHub Actions output format (defaults to \$GITHUB_OUTPUT when set)
+	   env: VDM_OUTPUT_FILE
+	example: ${PROGRAM_CODE} --output=/src/octojpack.out
+	======================================================
    -q | --quiet
 	mute all output messages
 	example: ${PROGRAM_CODE} --quiet
@@ -1415,6 +1692,13 @@ CREATION_YEAR=$(TZ=":ZULU" date +"%Y")
 
 # the quiet switch
 QUIET="${QUIET:-0}"
+
+# the package zip switch (build a zip file of the package)
+VDM_PACKAGE_ZIP="${VDM_PACKAGE_ZIP:-0}"
+# the git push switch (push the package to the git repository)
+VDM_PACKAGE_PUSH="${VDM_PACKAGE_PUSH:-1}"
+# the keep files switch (keep the package build files once done)
+VDM_KEEP_FILES="${VDM_KEEP_FILES:-0}"
 
 # we set the packager directorys
 tmp_path="/home/$USER/${PROGRAM_CODE}"
@@ -1526,6 +1810,36 @@ while :; do
     VDM_VERBOSITY=${1#*=}
     if [ -z "$VDM_VERBOSITY" ]; then
       echo '[error] "--verbosity" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  --zip)
+    VDM_PACKAGE_ZIP=1
+    ;;
+  --zip-name=*)
+    VDM_PACKAGE_ZIP_NAME=${1#*=}
+    if [ -z "$VDM_PACKAGE_ZIP_NAME" ]; then
+      echo '[error] "--zip-name" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  --zip-dir=*)
+    VDM_PACKAGE_ZIP_DIR=${1#*=}
+    if [ -z "$VDM_PACKAGE_ZIP_DIR" ]; then
+      echo '[error] "--zip-dir" requires a non-empty option argument.'
+      exit 17
+    fi
+    ;;
+  --no-push)
+    VDM_PACKAGE_PUSH=0
+    ;;
+  --keep-files)
+    VDM_KEEP_FILES=1
+    ;;
+  -o=* | --output=*)
+    VDM_OUTPUT_FILE=${1#*=}
+    if [ -z "$VDM_OUTPUT_FILE" ]; then
+      echo '[error] "--output" requires a non-empty option argument.'
       exit 17
     fi
     ;;

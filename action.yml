@@ -1,0 +1,565 @@
+name: 'Octojpack'
+description: 'Build a Joomla package (zip) from multiple Gitea hosted extensions using a JSON configuration and environment variables, and optionally push it to a Gitea repository.'
+author: 'Llewellyn van der Merwe'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  # ------------------------------------------------------------ configuration
+  config:
+    description: 'Path (relative to the workspace) or URL of the JSON package configuration (VDM_PACKAGE_CONF_FILE).'
+    required: false
+    default: ''
+  config-json:
+    description: 'Inline JSON package configuration. When set it is written to a file and used instead of `config`.'
+    required: false
+    default: ''
+  env-file:
+    description: 'Path to a .env file the script sources for extra environment variables (VDM_ENV_FILE_PATH).'
+    required: false
+    default: ''
+  main-dir:
+    description: 'Working directory of the build (VDM_MAIN_DIR). Defaults to $RUNNER_TEMP/octojpack.'
+    required: false
+    default: ''
+  licence-dir:
+    description: 'Directory holding the licence file named in the configuration (VDM_LICENSE_DIR). Defaults to <main-dir>/licenses, then the workspace.'
+    required: false
+    default: ''
+
+  # ------------------------------------------------------------ gitea
+  token:
+    description: 'Gitea API access token (VDM_GLOBAL_TOKEN). Pass a secret.'
+    required: false
+    default: ''
+  url:
+    description: 'Gitea host without protocol, for example git.vdm.dev (VDM_GLOBAL_URL).'
+    required: false
+    default: ''
+  api:
+    description: 'Gitea API base URL, for example https://git.vdm.dev/api/v1 (VDM_GLOBAL_API).'
+    required: false
+    default: ''
+
+  # ------------------------------------------------------------ packager
+  packager:
+    description: 'Packager name (VDM_PACKAGER).'
+    required: false
+    default: ''
+  packager-url:
+    description: 'Packager URL (VDM_PACKAGER_URL).'
+    required: false
+    default: ''
+  packager-lang:
+    description: 'Language tag used to resolve the package name from the language files, default en-GB (VDM_PACKAGER_LANG).'
+    required: false
+    default: ''
+
+  # ------------------------------------------------------------ package overrides
+  package-name:
+    description: 'Package name, for example pkg_example (VDM_PACKAGE_NAME).'
+    required: false
+    default: ''
+  code-name:
+    description: 'Package code name (VDM_CODE_NAME).'
+    required: false
+    default: ''
+  name:
+    description: 'Package display name or language constant (VDM_NAME).'
+    required: false
+    default: ''
+  description:
+    description: 'Package description (VDM_DESCRIPTION).'
+    required: false
+    default: ''
+  version-id:
+    description: 'The extension id whose version becomes the package version (VDM_PACKAGE_VERSION_ID).'
+    required: false
+    default: ''
+  version:
+    description: 'Force the package version/tag, for example v1.2.3 (VDM_PACKAGE_VERSION).'
+    required: false
+    default: ''
+  min-joomla-version:
+    description: 'Minimum Joomla version (VDM_MIN_JOOMLA_VERSION).'
+    required: false
+    default: ''
+  max-joomla-version:
+    description: 'Maximum Joomla version (VDM_MAX_JOOMLA_VERSION).'
+    required: false
+    default: ''
+  copyright:
+    description: 'Copyright statement (VDM_COPYRIGHT).'
+    required: false
+    default: ''
+  copyright-year:
+    description: 'Copyright year (VDM_COPYRIGHT_YEAR).'
+    required: false
+    default: ''
+  license:
+    description: 'License statement (VDM_LICENSE).'
+    required: false
+    default: ''
+  license-file:
+    description: 'Licence file name inside licence-dir, or a URL (VDM_LICENSE_FILE).'
+    required: false
+    default: ''
+  installation-file:
+    description: 'Installation script path (relative to the workspace) or URL (VDM_INSTALLATION_FILE).'
+    required: false
+    default: ''
+  author:
+    description: 'Author name (VDM_AUTHOR).'
+    required: false
+    default: ''
+  author-email:
+    description: 'Author email (VDM_AUTHOR_EMAIL).'
+    required: false
+    default: ''
+  author-url:
+    description: 'Author URL (VDM_AUTHOR_URL).'
+    required: false
+    default: ''
+  update-server:
+    description: 'Update server URL (VDM_UPDATE_SERVER).'
+    required: false
+    default: ''
+  changelog-server:
+    description: 'Changelog URL (VDM_CHANGELOG_SERVER).'
+    required: false
+    default: ''
+
+  # ------------------------------------------------------------ repository overrides
+  repository-owner:
+    description: 'Owner of the Gitea repository the package is pushed to (VDM_PACKAGE_OWNER).'
+    required: false
+    default: ''
+  repository-repo:
+    description: 'Name of the Gitea repository the package is pushed to (VDM_PACKAGE_REPO).'
+    required: false
+    default: ''
+  repository-branch:
+    description: 'Branch of the Gitea repository the package is pushed to (VDM_PACKAGE_REPO_BRANCH).'
+    required: false
+    default: ''
+  repository-token-name:
+    description: 'Name of the environment variable holding the token for the package repository (VDM_PACKAGE_TOKEN_NAME).'
+    required: false
+    default: ''
+  repository-url-name:
+    description: 'Name of the environment variable holding the host of the package repository (VDM_PACKAGE_URL_NAME).'
+    required: false
+    default: ''
+  repository-api-name:
+    description: 'Name of the environment variable holding the API of the package repository (VDM_PACKAGE_API_NAME).'
+    required: false
+    default: ''
+
+  # ------------------------------------------------------------ git (only needed when push is true)
+  git-author-name:
+    description: 'Git author name (GIT_AUTHOR_NAME). Not needed when octoleo/git-user already configured git.'
+    required: false
+    default: ''
+  git-author-email:
+    description: 'Git author email (GIT_AUTHOR_EMAIL). Not needed when octoleo/git-user already configured git.'
+    required: false
+    default: ''
+  git-signing-key:
+    description: 'Git signing key id (GIT_SIGNING_KEY).'
+    required: false
+    default: ''
+  git-gpg-sign:
+    description: 'Sign the git commits, true or false (GIT_GPG_SIGN).'
+    required: false
+    default: ''
+  git-ssh-key-path:
+    description: 'Path of the SSH private key used for the git push (GIT_SSH_KEY_PATH).'
+    required: false
+    default: ''
+
+  # ------------------------------------------------------------ behaviour
+  zip:
+    description: 'Build the installable package zip file.'
+    required: false
+    default: 'true'
+  zip-name:
+    description: 'File name of the package zip. Defaults to <package_name>_<version>.zip.'
+    required: false
+    default: ''
+  zip-dir:
+    description: 'Directory (relative to the workspace) where the package zip is written. Defaults to <main-dir>/packages.'
+    required: false
+    default: ''
+  push:
+    description: 'Push the package to the Gitea repository named in the configuration (requires git and SSH to be set up, see octoleo/git-user).'
+    required: false
+    default: 'false'
+  keep-files:
+    description: 'Keep the package build directory once done, so later steps can use package-dir.'
+    required: false
+    default: 'true'
+  quiet:
+    description: 'Mute the script output.'
+    required: false
+    default: 'false'
+  install-dependencies:
+    description: 'Install missing dependencies (git, curl, jq, unzip, zip, wget) with apt-get when the runner lacks them.'
+    required: false
+    default: 'true'
+  summary:
+    description: 'Write a summary of the build to the job summary.'
+    required: false
+    default: 'true'
+
+  # ------------------------------------------------------------ artifact
+  upload-artifact:
+    description: 'Upload the package zip, its manifest and its checksum as a workflow artifact.'
+    required: false
+    default: 'true'
+  artifact-name:
+    description: 'Name of the artifact. Defaults to the zip file name without the extension.'
+    required: false
+    default: ''
+  artifact-retention-days:
+    description: 'Days to keep the artifact. Empty uses the repository default.'
+    required: false
+    default: ''
+  artifact-overwrite:
+    description: 'Overwrite an existing artifact with the same name (for re-runs).'
+    required: false
+    default: 'true'
+
+outputs:
+  name:
+    description: 'Human readable package name.'
+    value: ${{ steps.octojpack.outputs.name }}
+  package-name:
+    description: 'Package name, for example pkg_example.'
+    value: ${{ steps.octojpack.outputs.package-name }}
+  code-name:
+    description: 'Package code name.'
+    value: ${{ steps.octojpack.outputs.code-name }}
+  version:
+    description: 'Package version without the v prefix, for example 1.2.3.'
+    value: ${{ steps.octojpack.outputs.version }}
+  tag:
+    description: 'Package version as tagged, for example v1.2.3.'
+    value: ${{ steps.octojpack.outputs.tag }}
+  package-dir:
+    description: 'Absolute path of the package build directory (empty when keep-files is false).'
+    value: ${{ steps.octojpack.outputs.package-dir }}
+  package-xml:
+    description: 'Absolute path of the package manifest XML (empty when keep-files is false).'
+    value: ${{ steps.octojpack.outputs.package-xml }}
+  package-zip:
+    description: 'Absolute path of the package zip file (empty when zip is false).'
+    value: ${{ steps.octojpack.outputs.package-zip }}
+  package-zip-name:
+    description: 'File name of the package zip.'
+    value: ${{ steps.octojpack.outputs.package-zip-name }}
+  package-zip-dir:
+    description: 'Directory holding the package zip, its manifest and its checksum.'
+    value: ${{ steps.octojpack.outputs.package-zip-dir }}
+  package-sha256:
+    description: 'SHA-256 checksum of the package zip.'
+    value: ${{ steps.octojpack.outputs.package-sha256 }}
+  package-sha256-file:
+    description: 'Absolute path of the checksum file (sha256sum -c format).'
+    value: ${{ steps.octojpack.outputs.package-sha256-file }}
+  package-manifest:
+    description: 'Absolute path of the JSON manifest describing the package and its extensions.'
+    value: ${{ steps.octojpack.outputs.package-manifest }}
+  repository-owner:
+    description: 'Owner of the Gitea package repository.'
+    value: ${{ steps.octojpack.outputs.repository-owner }}
+  repository-repo:
+    description: 'Name of the Gitea package repository.'
+    value: ${{ steps.octojpack.outputs.repository-repo }}
+  repository-branch:
+    description: 'Branch of the Gitea package repository.'
+    value: ${{ steps.octojpack.outputs.repository-branch }}
+  repository-url:
+    description: 'URL of the Gitea package repository.'
+    value: ${{ steps.octojpack.outputs.repository-url }}
+  pushed:
+    description: 'true when the package was pushed to the Gitea repository.'
+    value: ${{ steps.octojpack.outputs.pushed }}
+  extensions:
+    description: 'JSON array of the bundled extensions (owner, repo, url, type, id, mode, ref, version, message, file, group/client).'
+    value: ${{ steps.octojpack.outputs.extensions }}
+  artifact-name:
+    description: 'Name of the uploaded artifact (use it with actions/download-artifact).'
+    value: ${{ steps.artifact.outputs.name }}
+  artifact-id:
+    description: 'Id of the uploaded artifact (empty when not uploaded).'
+    value: ${{ steps.upload.outputs.artifact-id }}
+  artifact-url:
+    description: 'URL of the uploaded artifact (empty when not uploaded).'
+    value: ${{ steps.upload.outputs.artifact-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install missing dependencies
+      if: inputs.install-dependencies == 'true'
+      shell: bash
+      run: |
+        missing=()
+        for tool in git curl jq unzip zip wget; do
+          command -v "${tool}" >/dev/null 2>&1 || missing+=("${tool}")
+        done
+        if [ "${#missing[@]}" -eq 0 ]; then
+          echo "[info] All dependencies are installed."
+          exit 0
+        fi
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "::error::Missing dependencies (${missing[*]}) and apt-get is not available to install them."
+          exit 1
+        fi
+        echo "[info] Installing missing dependencies: ${missing[*]}"
+        sudo_cmd=""
+        if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+          sudo_cmd="sudo"
+        fi
+        ${sudo_cmd} apt-get update -qq
+        ${sudo_cmd} apt-get install -y -qq "${missing[@]}"
+
+    - name: Build the package
+      id: octojpack
+      shell: bash
+      env:
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_CONFIG_JSON: ${{ inputs.config-json }}
+        INPUT_ENV_FILE: ${{ inputs.env-file }}
+        INPUT_MAIN_DIR: ${{ inputs.main-dir }}
+        INPUT_LICENCE_DIR: ${{ inputs.licence-dir }}
+        INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_API: ${{ inputs.api }}
+        INPUT_PACKAGER: ${{ inputs.packager }}
+        INPUT_PACKAGER_URL: ${{ inputs.packager-url }}
+        INPUT_PACKAGER_LANG: ${{ inputs.packager-lang }}
+        INPUT_PACKAGE_NAME: ${{ inputs.package-name }}
+        INPUT_CODE_NAME: ${{ inputs.code-name }}
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_DESCRIPTION: ${{ inputs.description }}
+        INPUT_VERSION_ID: ${{ inputs.version-id }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_MIN_JOOMLA_VERSION: ${{ inputs.min-joomla-version }}
+        INPUT_MAX_JOOMLA_VERSION: ${{ inputs.max-joomla-version }}
+        INPUT_COPYRIGHT: ${{ inputs.copyright }}
+        INPUT_COPYRIGHT_YEAR: ${{ inputs.copyright-year }}
+        INPUT_LICENSE: ${{ inputs.license }}
+        INPUT_LICENSE_FILE: ${{ inputs.license-file }}
+        INPUT_INSTALLATION_FILE: ${{ inputs.installation-file }}
+        INPUT_AUTHOR: ${{ inputs.author }}
+        INPUT_AUTHOR_EMAIL: ${{ inputs.author-email }}
+        INPUT_AUTHOR_URL: ${{ inputs.author-url }}
+        INPUT_UPDATE_SERVER: ${{ inputs.update-server }}
+        INPUT_CHANGELOG_SERVER: ${{ inputs.changelog-server }}
+        INPUT_REPOSITORY_OWNER: ${{ inputs.repository-owner }}
+        INPUT_REPOSITORY_REPO: ${{ inputs.repository-repo }}
+        INPUT_REPOSITORY_BRANCH: ${{ inputs.repository-branch }}
+        INPUT_REPOSITORY_TOKEN_NAME: ${{ inputs.repository-token-name }}
+        INPUT_REPOSITORY_URL_NAME: ${{ inputs.repository-url-name }}
+        INPUT_REPOSITORY_API_NAME: ${{ inputs.repository-api-name }}
+        INPUT_GIT_AUTHOR_NAME: ${{ inputs.git-author-name }}
+        INPUT_GIT_AUTHOR_EMAIL: ${{ inputs.git-author-email }}
+        INPUT_GIT_SIGNING_KEY: ${{ inputs.git-signing-key }}
+        INPUT_GIT_GPG_SIGN: ${{ inputs.git-gpg-sign }}
+        INPUT_GIT_SSH_KEY_PATH: ${{ inputs.git-ssh-key-path }}
+        INPUT_ZIP: ${{ inputs.zip }}
+        INPUT_ZIP_NAME: ${{ inputs.zip-name }}
+        INPUT_ZIP_DIR: ${{ inputs.zip-dir }}
+        INPUT_PUSH: ${{ inputs.push }}
+        INPUT_KEEP_FILES: ${{ inputs.keep-files }}
+        INPUT_QUIET: ${{ inputs.quiet }}
+      run: |
+        # ---------------------------------------------------------- helpers
+        is_true() {
+          case "${1,,}" in
+          1 | true | yes | on | y) return 0 ;;
+          *) return 1 ;;
+          esac
+        }
+
+        # make a workspace relative path absolute (URLs and empty values pass through)
+        resolve_path() {
+          local value="${1}"
+          case "${value}" in
+          '' | /* | http://* | https://*) printf '%s' "${value}" ;;
+          *) printf '%s' "${GITHUB_WORKSPACE}/${value}" ;;
+          esac
+        }
+
+        # export a variable only when the input was given (empty inputs must not override the configuration)
+        export_if_set() {
+          if [ -n "${2}" ]; then
+            export "${1}=${2}"
+          fi
+        }
+
+        # ---------------------------------------------------------- directories
+        main_dir="$(resolve_path "${INPUT_MAIN_DIR:-${RUNNER_TEMP}/octojpack}")"
+        mkdir -p "${main_dir}"
+        export VDM_MAIN_DIR="${main_dir}"
+
+        # ---------------------------------------------------------- configuration
+        config="$(resolve_path "${INPUT_CONFIG}")"
+        if [ -n "${INPUT_CONFIG_JSON}" ]; then
+          config="${main_dir}/octojpack-config.json"
+          printf '%s\n' "${INPUT_CONFIG_JSON}" >"${config}"
+          if ! jq -e . "${config}" >/dev/null 2>&1; then
+            echo "::error::The config-json input is not valid JSON."
+            exit 1
+          fi
+        fi
+        if [ -z "${config}" ]; then
+          echo "::error::Either the config or the config-json input is required."
+          exit 1
+        fi
+        export VDM_PACKAGE_CONF_FILE="${config}"
+
+        export_if_set VDM_ENV_FILE_PATH "$(resolve_path "${INPUT_ENV_FILE}")"
+        export_if_set VDM_LICENSE_DIR "$(resolve_path "${INPUT_LICENCE_DIR}")"
+
+        # ---------------------------------------------------------- gitea
+        export_if_set VDM_GLOBAL_TOKEN "${INPUT_TOKEN}"
+        export_if_set VDM_GLOBAL_URL "${INPUT_URL}"
+        export_if_set VDM_GLOBAL_API "${INPUT_API}"
+
+        # ---------------------------------------------------------- packager
+        export_if_set VDM_PACKAGER "${INPUT_PACKAGER}"
+        export_if_set VDM_PACKAGER_URL "${INPUT_PACKAGER_URL}"
+        export_if_set VDM_PACKAGER_LANG "${INPUT_PACKAGER_LANG}"
+
+        # ---------------------------------------------------------- package overrides
+        export_if_set VDM_PACKAGE_NAME "${INPUT_PACKAGE_NAME}"
+        export_if_set VDM_CODE_NAME "${INPUT_CODE_NAME}"
+        export_if_set VDM_NAME "${INPUT_NAME}"
+        export_if_set VDM_DESCRIPTION "${INPUT_DESCRIPTION}"
+        export_if_set VDM_PACKAGE_VERSION_ID "${INPUT_VERSION_ID}"
+        export_if_set VDM_PACKAGE_VERSION "${INPUT_VERSION}"
+        export_if_set VDM_MIN_JOOMLA_VERSION "${INPUT_MIN_JOOMLA_VERSION}"
+        export_if_set VDM_MAX_JOOMLA_VERSION "${INPUT_MAX_JOOMLA_VERSION}"
+        export_if_set VDM_COPYRIGHT "${INPUT_COPYRIGHT}"
+        export_if_set VDM_COPYRIGHT_YEAR "${INPUT_COPYRIGHT_YEAR}"
+        export_if_set VDM_LICENSE "${INPUT_LICENSE}"
+        export_if_set VDM_LICENSE_FILE "${INPUT_LICENSE_FILE}"
+        export_if_set VDM_INSTALLATION_FILE "$(resolve_path "${INPUT_INSTALLATION_FILE}")"
+        export_if_set VDM_AUTHOR "${INPUT_AUTHOR}"
+        export_if_set VDM_AUTHOR_EMAIL "${INPUT_AUTHOR_EMAIL}"
+        export_if_set VDM_AUTHOR_URL "${INPUT_AUTHOR_URL}"
+        export_if_set VDM_UPDATE_SERVER "${INPUT_UPDATE_SERVER}"
+        export_if_set VDM_CHANGELOG_SERVER "${INPUT_CHANGELOG_SERVER}"
+
+        # ---------------------------------------------------------- repository overrides
+        export_if_set VDM_PACKAGE_OWNER "${INPUT_REPOSITORY_OWNER}"
+        export_if_set VDM_PACKAGE_REPO "${INPUT_REPOSITORY_REPO}"
+        export_if_set VDM_PACKAGE_REPO_BRANCH "${INPUT_REPOSITORY_BRANCH}"
+        export_if_set VDM_PACKAGE_TOKEN_NAME "${INPUT_REPOSITORY_TOKEN_NAME}"
+        export_if_set VDM_PACKAGE_URL_NAME "${INPUT_REPOSITORY_URL_NAME}"
+        export_if_set VDM_PACKAGE_API_NAME "${INPUT_REPOSITORY_API_NAME}"
+
+        # ---------------------------------------------------------- git
+        export_if_set GIT_AUTHOR_NAME "${INPUT_GIT_AUTHOR_NAME}"
+        export_if_set GIT_AUTHOR_EMAIL "${INPUT_GIT_AUTHOR_EMAIL}"
+        export_if_set GIT_SIGNING_KEY "${INPUT_GIT_SIGNING_KEY}"
+        export_if_set GIT_GPG_SIGN "${INPUT_GIT_GPG_SIGN}"
+        export_if_set GIT_SSH_KEY_PATH "$(resolve_path "${INPUT_GIT_SSH_KEY_PATH}")"
+
+        # ---------------------------------------------------------- behaviour
+        export_if_set VDM_PACKAGE_ZIP_NAME "${INPUT_ZIP_NAME}"
+        export_if_set VDM_PACKAGE_ZIP_DIR "$(resolve_path "${INPUT_ZIP_DIR}")"
+
+        args=(--output="${GITHUB_OUTPUT}")
+        if is_true "${INPUT_ZIP}"; then
+          args+=(--zip)
+        fi
+        if ! is_true "${INPUT_PUSH}"; then
+          args+=(--no-push)
+        fi
+        if is_true "${INPUT_KEEP_FILES}"; then
+          args+=(--keep-files)
+        fi
+        if is_true "${INPUT_QUIET}"; then
+          args+=(--quiet)
+        fi
+
+        # ---------------------------------------------------------- run
+        echo "[info] Running octojpack ${args[*]}"
+        bash "${GITHUB_ACTION_PATH}/src/octojpack" "${args[@]}"
+
+    - name: Resolve the artifact name
+      id: artifact
+      shell: bash
+      env:
+        INPUT_ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        ZIP_NAME: ${{ steps.octojpack.outputs.package-zip-name }}
+      run: |
+        name="${INPUT_ARTIFACT_NAME:-${ZIP_NAME%.zip}}"
+        echo "name=${name}" >>"${GITHUB_OUTPUT}"
+
+    - name: Upload the package artifact
+      id: upload
+      if: inputs.upload-artifact == 'true' && steps.octojpack.outputs.package-zip != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.artifact.outputs.name }}
+        path: |
+          ${{ steps.octojpack.outputs.package-zip }}
+          ${{ steps.octojpack.outputs.package-manifest }}
+          ${{ steps.octojpack.outputs.package-sha256-file }}
+        if-no-files-found: error
+        compression-level: 0
+        overwrite: ${{ inputs.artifact-overwrite }}
+        retention-days: ${{ inputs.artifact-retention-days }}
+
+    - name: Write the job summary
+      if: inputs.summary == 'true' && steps.octojpack.outputs.package-name != ''
+      shell: bash
+      env:
+        NAME: ${{ steps.octojpack.outputs.name }}
+        PACKAGE_NAME: ${{ steps.octojpack.outputs.package-name }}
+        CODE_NAME: ${{ steps.octojpack.outputs.code-name }}
+        VERSION: ${{ steps.octojpack.outputs.version }}
+        TAG: ${{ steps.octojpack.outputs.tag }}
+        PACKAGE_ZIP: ${{ steps.octojpack.outputs.package-zip }}
+        PACKAGE_ZIP_NAME: ${{ steps.octojpack.outputs.package-zip-name }}
+        PACKAGE_SHA256: ${{ steps.octojpack.outputs.package-sha256 }}
+        PACKAGE_MANIFEST: ${{ steps.octojpack.outputs.package-manifest }}
+        REPOSITORY_URL: ${{ steps.octojpack.outputs.repository-url }}
+        PUSHED: ${{ steps.octojpack.outputs.pushed }}
+        EXTENSIONS: ${{ steps.octojpack.outputs.extensions }}
+        ARTIFACT_NAME: ${{ steps.artifact.outputs.name }}
+        ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+      run: |
+        {
+          echo "### Octojpack: ${NAME} (${TAG})"
+          echo ""
+          echo "| Key | Value |"
+          echo "| --- | --- |"
+          echo "| Package | \`${PACKAGE_NAME}\` (code name \`${CODE_NAME}\`) |"
+          echo "| Version | \`${VERSION}\` (tag \`${TAG}\`) |"
+          if [ -n "${PACKAGE_ZIP}" ]; then
+            echo "| Zip | \`${PACKAGE_ZIP_NAME}\` |"
+            echo "| SHA-256 | \`${PACKAGE_SHA256}\` |"
+            echo "| Manifest | \`$(basename "${PACKAGE_MANIFEST}")\` |"
+          fi
+          if [ -n "${ARTIFACT_URL}" ]; then
+            echo "| Artifact | [${ARTIFACT_NAME}](${ARTIFACT_URL}) |"
+          elif [ -n "${PACKAGE_ZIP}" ]; then
+            echo "| Artifact | not uploaded |"
+          fi
+          if [ -n "${REPOSITORY_URL}" ]; then
+            echo "| Repository | ${REPOSITORY_URL} (pushed: ${PUSHED}) |"
+          fi
+          echo ""
+          echo "#### Bundled extensions"
+          echo ""
+          echo "| Type | Id | Repository | Ref | Version |"
+          echo "| --- | --- | --- | --- | --- |"
+          jq -r '.[] | "| \(.type)\(if .group then " (" + .group + ")" elif .client then " (" + .client + ")" else "" end) | `\(.id)` | [\(.owner)/\(.repo)](\(.url)) | `\(.ref)` | `\(.version)` |"' <<<"${EXTENSIONS:-[]}"
+        } >>"${GITHUB_STEP_SUMMARY}"

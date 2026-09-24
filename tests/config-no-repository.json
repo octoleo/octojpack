@@ -1,0 +1,27 @@
+{
+  "global": {
+    "packager": "Octojpack Tests",
+    "packager_url": "https://github.com/octoleo/octojpack"
+  },
+  "package": {
+    "name": "Minimal Package",
+    "code_name": "minimal",
+    "package_name": "pkg_minimal",
+    "copyright": "Copyright (C) 2021 Llewellyn van der Merwe. All rights reserved.",
+    "copyright_year": "2021",
+    "license": "GNU General Public License version 2; see LICENSE",
+    "license_file": "http://127.0.0.1:8765/LICENSE",
+    "author": "Llewellyn van der Merwe",
+    "author_email": "joomla@vdm.io",
+    "author_url": "https://io.vdm.dev",
+    "description": "A minimal package without a repository section (zip only)."
+  },
+  "files": [
+    {
+      "owner": "tests",
+      "repo": "com_minimal",
+      "id": "com_minimal",
+      "type": "component"
+    }
+  ]
+}
