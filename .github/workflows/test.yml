@@ -23,6 +23,7 @@ jobs:
 
       - name: Validate the YAML files
         run: |
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet pyyaml
           python3 - <<'PY'
           import glob
           import yaml
