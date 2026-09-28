@@ -226,6 +226,9 @@ allowing that extension to be omitted.
 The package destination can also be an existing GitHub repository with SSH write
 access. Create that repository and the configured destination branch first;
 GitHub does not support Gitea's push-to-create behavior.
+The destination branch and release tag are pushed atomically, so rejection of
+either leaves both unchanged. A retry also restores a missing tag when the
+package files already match the destination branch, without moving existing tags.
 
 The repository doubles as a composite GitHub Action (see [action.yml](action.yml)).
 There is nothing to set up: the action runs `src/octojpack` straight from the checkout of the action on the runner (the Ubuntu runners already have git, curl, jq, unzip, zip and wget; a missing tool is installed with apt-get unless `install-dependencies` is false), passes every input through as the environment variable the script already understands, builds the package zip, uploads it as a workflow artifact and exposes the results as outputs so the next job (or the next workflow) can pick the package up.

@@ -293,6 +293,25 @@ CONFIG_NEXT="${WORK}/config-next.json"
 mkdir -p "${MAIN}"
 # the component now comes from a repository that carries a newer tag (v1.3.0 in the mock)
 jq '(.files[] | select(.repo == "com_example") | .repo) |= "com_example-next"' "${CONFIG}" >"${CONFIG_NEXT}"
+# Reject the new tag first: an atomic push must leave the branch unchanged.
+cat >"${REMOTE}/tests/pkg-example.git/hooks/update" <<'HOOK'
+#!/bin/bash
+[[ "${1}" != refs/tags/v1.3.0 ]]
+HOOK
+chmod +x "${REMOTE}/tests/pkg-example.git/hooks/update"
+if GIT_SSH_COMMAND="${HERE}/fake-ssh.sh" MOCK_GIT_ROOT="${REMOTE}" \
+  GIT_AUTHOR_NAME="Octojpack Tests" GIT_AUTHOR_EMAIL="tests@example.org" GIT_GPG_SIGN=false \
+  run_octojpack --conf="${CONFIG_NEXT}" --main-dir="${WORK}/t8-rejected" --licence-dir="${HERE}/licenses" \
+    --url="gitea.test" >"${LOG}" 2>&1; then
+  fail "a rejected package tag must fail publication"
+fi
+[ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-list --count master)" = "1" ] || fail "rejected tag partially advanced the branch"
+if git -C "${REMOTE}/tests/pkg-example.git" show-ref --verify --quiet refs/tags/v1.3.0; then
+  fail "rejected tag was published"
+fi
+rm "${REMOTE}/tests/pkg-example.git/hooks/update"
+pass "tag rejection publishes neither branch nor tag"
+
 GIT_SSH_COMMAND="${HERE}/fake-ssh.sh" MOCK_GIT_ROOT="${REMOTE}" \
   GIT_AUTHOR_NAME="Octojpack Tests" GIT_AUTHOR_EMAIL="tests@example.org" GIT_GPG_SIGN=false \
   run_octojpack --conf="${CONFIG_NEXT}" --main-dir="${MAIN}" --licence-dir="${HERE}/licenses" \
@@ -307,6 +326,18 @@ git -C "${REMOTE}/tests/pkg-example.git" show-ref --tags --quiet "refs/tags/v1.3
 assert_contains "$(git -C "${REMOTE}/tests/pkg-example.git" ls-tree -r --name-only master)" 'src/tests__com_example-next__v1.3.0.zip' "remote tree updated"
 [ -f "${MAIN}/packages/pkg_example_v1.3.0.zip" ] || fail "zip for the new version not found"
 pass "existing repository updated with a new commit and tag"
+
+# Simulate an older non-atomic run that published the branch but lost its tag.
+git -C "${REMOTE}/tests/pkg-example.git" update-ref -d refs/tags/v1.3.0
+GIT_SSH_COMMAND="${HERE}/fake-ssh.sh" MOCK_GIT_ROOT="${REMOTE}" \
+  GIT_AUTHOR_NAME="Octojpack Tests" GIT_AUTHOR_EMAIL="tests@example.org" GIT_GPG_SIGN=false \
+  run_octojpack --conf="${CONFIG_NEXT}" --main-dir="${WORK}/t8-retry" --licence-dir="${HERE}/licenses" \
+    --url="gitea.test" --output="${WORK}/t8-retry.out" >"${LOG}" 2>&1 || fail "missing tag retry failed"
+[ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-list --count master)" = "2" ] || fail "tag retry should not create a commit"
+[ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse refs/tags/v1.3.0)" = "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse master)" ] || fail "missing tag was not restored"
+[ "$(output_value "${WORK}/t8-retry.out" repository-status)" = pushed ] || fail "tag recovery should report a push"
+[ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse refs/tags/v1.2.3)" = "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse master^)" ] || fail "existing release tag was moved"
+pass "unchanged package recovers an absent release tag without moving existing tags"
 
 ########################################################################
 echo "== test 9: hardening (cli precedence, relative paths, no env leaks, safe names)"
@@ -362,8 +393,8 @@ output_value "${OUT}" extensions | jq -e '.[0].message == "Release v1.2.3"' >/de
 unzip -tq "$(output_value "${OUT}" package-dir)/src/tests__com_github__v1.2.3.zip" >/dev/null || fail "GitHub tag ZIP invalid"
 pass "GitHub tags work without a message field or uploaded release assets"
 
-for mode in v7.8.9 branch:main; do
-  CASE_NAME="${mode//:/_}"
+for mode in v7.8.9 branch:main branch:feature/topic release/v7.8.9; do
+  CASE_NAME="${mode//[:\/]/_}"
   MAIN="${WORK}/t10-${CASE_NAME}"
   OUT="${WORK}/t10-${CASE_NAME}.out"
   LOG="${WORK}/t10-${CASE_NAME}.log"
@@ -376,7 +407,7 @@ for mode in v7.8.9 branch:main; do
   output_value "${OUT}" extensions | jq -e --arg ref "${mode#branch:}" '.[0].ref == $ref' >/dev/null ||
     fail "explicit ref ${mode} was not retained"
 done
-pass "explicit tag and untagged branch do not require a tag listing"
+pass "explicit tags and branches, including slash refs, retain their names without a tag listing"
 
 for failure in missing invalid_archive; do
   MAIN="${WORK}/t10-${failure}"
@@ -406,6 +437,41 @@ if VDM_GLOBAL_TOKEN="test-token" VDM_GLOBAL_API="http://127.0.0.1:${PORT}/github
 fi
 [ ! -d "${MAIN}/packages" ] || fail "partial package output was created"
 assert_contains "$(cat "${LOG}")" 'Required extension tests/invalid_archive could not be loaded' "required source failure stops the entire package"
+
+for invalid_owner in '' 'invalid owner'; do
+  MAIN="${WORK}/t10-invalid-owner"
+  LOG="${WORK}/t10-invalid-owner.log"
+  jq --arg owner "${invalid_owner}" '.files += [{owner: $owner, repo: "required_plugin", id: "required_plugin", type: "plugin", group: "console", mode: "v1.2.3"}]' \
+    "${CONFIG_GITHUB}" >"${WORK}/config-invalid-owner.json"
+  if VDM_GLOBAL_TOKEN="test-token" VDM_GLOBAL_API="http://127.0.0.1:${PORT}/github" \
+    bash "${SCRIPT}" --env=/dev/null --conf="${WORK}/config-invalid-owner.json" --main-dir="${MAIN}" \
+      --url=github.com --zip --no-push >"${LOG}" 2>&1; then
+    fail "required extension with empty/invalid owner must not be dropped from the package"
+  fi
+  [ ! -d "${MAIN}/packages" ] || fail "invalid owner produced a partial package"
+done
+pass "every configured entry is validated, including empty or whitespace-containing owners"
+
+########################################################################
+echo "== test 11: configured update and changelog URLs round-trip through valid XML"
+########################################################################
+MAIN="${WORK}/t11"
+LOG="${WORK}/t11.log"
+OUT="${WORK}/t11.out"
+UPDATE_URL='https://example.org/update.xml?extension=pkg_example&channel=stable&label="release"'
+CHANGELOG_URL="https://example.org/changelog.xml?extension=pkg_example&channel=stable&label='release'"
+VDM_UPDATE_SERVER="${UPDATE_URL}" VDM_CHANGELOG_SERVER="${CHANGELOG_URL}" \
+  run_octojpack --conf="${CONFIG_NO_REPO}" --main-dir="${MAIN}" --url="gitea.test" \
+    --zip --no-push --keep-files --output="${OUT}" >"${LOG}" 2>&1 || fail "URL XML build failed"
+python3 - "$(output_value "${OUT}" package-xml)" "${UPDATE_URL}" "${CHANGELOG_URL}" <<'PY' || fail "URL values did not round-trip through XML"
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+assert root.findtext("updateservers/server") == sys.argv[2]
+assert root.findtext("changelogurl") == sys.argv[3]
+PY
+pass "update and changelog URLs preserve their values in parseable package XML"
 
 echo
 echo "All tests passed."
