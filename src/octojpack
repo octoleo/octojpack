@@ -409,6 +409,7 @@ function setFiles() {
   # check for errors
   local has_error=false
   local has_files=false
+  local required
   # loop over the repos
   local i=0
   for owner in $(echo "${VDM_CONFIG_DATA}" | jq -r '.files[].owner'); do
@@ -417,6 +418,9 @@ function setFiles() {
     [ -n "${owner}" ] && VDM_OWNER="${owner}" || continue
     # check for errors
     has_error=false
+    # Missing extensions must never silently produce a partial package. An
+    # intentionally optional extension can opt out explicitly in its config.
+    required=$(echo "${VDM_CONFIG_DATA}" | jq -r ".files[$i].required != false")
     # get the global config values if not set
     getConfigValue 'VDM_REPO' ".files[$i].repo" || has_error=true
     getConfigValue 'VDM_TYPE' ".files[$i].type" || has_error=true
@@ -425,6 +429,7 @@ function setFiles() {
     # check if we have some errors already
     if $has_error; then
       clearFileEnv
+      $required && return 13
       # increment
       ((i++))
       continue
@@ -433,6 +438,7 @@ function setFiles() {
     if ! _valid_name "${VDM_OWNER}" || ! _valid_name "${VDM_REPO}"; then
       echo >&2 "[error] The file repository (${VDM_OWNER}/${VDM_REPO}) has an invalid owner or repository name, so it was skipped."
       clearFileEnv
+      $required && return 13
       # increment
       ((i++))
       continue
@@ -462,6 +468,7 @@ function setFiles() {
     # check if we have some errors already
     if $has_error; then
       clearFileEnv
+      $required && return 13
       # increment
       ((i++))
       continue
@@ -493,6 +500,10 @@ function setFiles() {
       fi
       # we have a file
       has_files=true
+    elif $required; then
+      echo >&2 "[error] Required extension ${VDM_OWNER}/${VDM_REPO} could not be loaded. Aborting the package."
+      clearFileEnv
+      return 13
     fi
     # increment
     ((i++))
@@ -546,6 +557,13 @@ function getZipFile() {
     VDM_MODE="${VDM_MODE#branch:}"
   fi
 
+  # An explicit ref can be fetched directly, including the first tag or an
+  # untagged branch. Listing tags first would reject otherwise valid refs.
+  if [ "${target}" = 'Key' ]; then
+    getFileByKey
+    return $?
+  fi
+
   callGiteaAPI "${mode}" "${VDM_OWNER}" "${VDM_REPO}" "${VDM_API}" "${VDM_TOKEN}" || return 11
 
   if [ -n "${VDM_API_BUCKET}" ]; then
@@ -565,15 +583,15 @@ function getFileByTags() {
     return 12
   }
   # get the message
-  setValueFromJson "VDM_ZIP_MESSAGE" ".[0].message" "${VDM_API_BUCKET}" || {
-    _echo "[error] Tag message not found in VDM_API_BUCKET."
-    return 12
-  }
+  # GitHub's tags API has no message field (Gitea does).
+  setValueFromJson "VDM_ZIP_MESSAGE" ".[0].message" "${VDM_API_BUCKET}" || VDM_ZIP_MESSAGE="Release ${VDM_ZIP_NAME}"
   # download the zip file if not already set
   if [ ! -f "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" ]; then
     # give message
     _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
-    curl -s -H "Authorization: token ${VDM_TOKEN}" -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip"
+    local archive_url
+    archive_url=$(getValueFromJson '.[0].zipball_url' "${VDM_API_BUCKET}") || archive_url=$(getArchiveUrl "${VDM_ZIP_NAME}")
+    downloadExtensionZip "${archive_url}" "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip" || return 12
   else
     # zip already set
     _echo "[error] ${VDM_OWNER}__${VDM_REPO}__${VDM_ZIP_NAME}.zip already set."
@@ -628,7 +646,7 @@ function getFileByReleases() {
       }
       # give message
       _echo "[info] Downloading the (${VDM_OWNER}-${asset_zip_file_name}) package."
-      curl -s -H "Authorization: token ${VDM_TOKEN}" -L "${VDM_ASSET_DOWNLOAD}" -o "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${asset_zip_file_name}"
+      downloadExtensionZip "${VDM_ASSET_DOWNLOAD}" "${VDM_PACKAGE_SRC_DIR}/${VDM_OWNER}__${asset_zip_file_name}" || return 12
       # so we got a file
       has_files=true
       # add to xml file
@@ -666,7 +684,7 @@ function getFileByKey() {
     # give message
     _echo "[info] Downloading the (${VDM_OWNER}-${VDM_REPO}-${VDM_ZIP_NAME}.zip) package."
     # download the zip file
-    curl -s -H "Authorization: token ${VDM_TOKEN}" -L "${VDM_API}/repos/${VDM_OWNER}/${VDM_REPO}/archive/${VDM_ZIP_NAME}.zip" -o "${VDM_PACKAGE_SRC_DIR}/${zip_name}"
+    downloadExtensionZip "$(getArchiveUrl "${VDM_ZIP_NAME}")" "${VDM_PACKAGE_SRC_DIR}/${zip_name}" || return 12
   else
     # zip already set
     _echo "[error] ${zip_name} already set."
@@ -702,6 +720,36 @@ function getFileByKey() {
   setFileToREADME
   # success
   return 0
+}
+
+# GitHub and Gitea use different archive endpoints. The public Git host also
+# identifies GitHub when its API is proxied; /api/v3 identifies GitHub Enterprise.
+function getArchiveUrl() {
+  local ref
+  ref=$(jq -rn --arg ref "${1}" '$ref | @uri') || return 12
+  case "${VDM_URL}:${VDM_API%/}" in
+  github.com:* | *:https://api.github.com | *:*/api/v3)
+    printf '%s/repos/%s/%s/zipball/%s' "${VDM_API%/}" "${VDM_OWNER}" "${VDM_REPO}" "${ref}"
+    ;;
+  *)
+    printf '%s/repos/%s/%s/archive/%s.zip' "${VDM_API%/}" "${VDM_OWNER}" "${VDM_REPO}" "${ref}"
+    ;;
+  esac
+}
+
+# Never include an HTTP error page or a truncated download as an extension.
+function downloadExtensionZip() {
+  local url="${1}"
+  local destination="${2}"
+  local temporary="${destination}.part"
+  if ! curl --fail --silent --show-error --location --retry 3 \
+    -H "Authorization: token ${VDM_TOKEN}" "${url}" -o "${temporary}" ||
+    ! unzip -tq "${temporary}" >/dev/null 2>&1; then
+    rm -f -- "${temporary}"
+    _echo "[error] Could not download a valid ZIP for ${VDM_OWNER}/${VDM_REPO} (${VDM_ZIP_NAME})."
+    return 12
+  fi
+  mv -- "${temporary}" "${destination}"
 }
 
 # set the File Details to XML

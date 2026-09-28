@@ -99,6 +99,28 @@ class Handler(BaseHTTPRequestHandler):
                 config = fh.read().replace("127.0.0.1:8765", self.headers.get("Host", "127.0.0.1:8765"))
             return self.send_body(200, config.encode(), "application/json")
 
+        # GitHub differs from Gitea: tags omit message and archives use zipball.
+        match = re.match(r"^/github/repos/([^/]+)/([^/]+)/tags$", path)
+        if match:
+            owner, repo = match.groups()
+            if repo == "first_tag":
+                return self.send_json(200, [])
+            return self.send_json(200, [{
+                "name": TAG_VERSION,
+                "commit": {"sha": "0000000000000000000000000000000000000000"},
+                "zipball_url": f"{self.base_url()}/github/repos/{owner}/{repo}/zipball/{TAG_VERSION}",
+            }])
+
+        match = re.match(r"^/github/repos/([^/]+)/([^/]+)/zipball/(.+)$", path)
+        if match:
+            owner, repo, ref = match.groups()
+            if repo == "invalid_archive":
+                return self.send_body(200, b"<html>Download unavailable</html>", "text/html")
+            if ref == "missing":
+                return self.send_error_json("Tag not found")
+            version = ref[1:] if ref.startswith("v") else BRANCH_VERSION
+            return self.send_body(200, extension_zip(repo, ref, version), "application/zip")
+
         match = re.match(r"^/api/v1/repos/([^/]+)/([^/]+)/(tags|releases)$", path)
         if match:
             owner, repo, kind = match.groups()

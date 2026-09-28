@@ -166,7 +166,7 @@ assert_contains "${XML}" '<scriptfile>install_example.php</scriptfile>' "xml scr
 assert_contains "${XML}" '<changelogurl>https://example.org/changelog/pkg_example_changelog.xml</changelogurl>' "xml changelog"
 assert_contains "${XML}" '<language tag="en-GB">en-GB/en-GB.pkg_example.sys.ini</language>' "xml language"
 assert_contains "$(cat "${PKG_DIR}/README.md")" '# Example Package (v1.2.3)' "readme title"
-assert_contains "$(cat "${LOG}")" 'failed to get tags from tests/missing_example' "missing repository is skipped, not fatal"
+assert_contains "$(cat "${LOG}")" 'failed to get tags from tests/missing_example' "explicitly optional missing repository is skipped"
 assert_contains "$(cat "${LOG}")" '[Success] Package completely updated!' "success message"
 
 ########################################################################
@@ -343,6 +343,69 @@ if [ -e "${WORK}/pkg_escape" ] || [ -e "$(dirname "${WORK}")/pkg_escape" ]; then
 fi
 [ -d "${MAIN}" ] || fail "main dir must never be removed"
 pass "package folder name is kept inside the main directory"
+
+########################################################################
+echo "== test 10: GitHub tags and explicit refs use source archives without release assets"
+########################################################################
+CONFIG_GITHUB="${WORK}/config-github.json"
+jq '.package.version_id = "com_example" | .files = [{owner: "tests", repo: "com_github", id: "com_example", type: "component", mode: "tags"}]' \
+  "${CONFIG_NO_REPO}" >"${CONFIG_GITHUB}"
+MAIN="${WORK}/t10"
+OUT="${WORK}/t10.out"
+LOG="${WORK}/t10.log"
+VDM_GLOBAL_TOKEN="test-token" VDM_GLOBAL_API="http://127.0.0.1:${PORT}/github" \
+  bash "${SCRIPT}" --env=/dev/null --conf="${CONFIG_GITHUB}" --main-dir="${MAIN}" \
+  --url=github.com --zip --no-push --keep-files --output="${OUT}" >"${LOG}" 2>&1 ||
+  fail "GitHub tags build failed"
+[ "$(output_value "${OUT}" tag)" = "v1.2.3" ] || fail "GitHub tag was not resolved"
+output_value "${OUT}" extensions | jq -e '.[0].message == "Release v1.2.3"' >/dev/null || fail "GitHub tag message fallback missing"
+unzip -tq "$(output_value "${OUT}" package-dir)/src/tests__com_github__v1.2.3.zip" >/dev/null || fail "GitHub tag ZIP invalid"
+pass "GitHub tags work without a message field or uploaded release assets"
+
+for mode in v7.8.9 branch:main; do
+  CASE_NAME="${mode//:/_}"
+  MAIN="${WORK}/t10-${CASE_NAME}"
+  OUT="${WORK}/t10-${CASE_NAME}.out"
+  LOG="${WORK}/t10-${CASE_NAME}.log"
+  jq --arg mode "${mode}" '.files[0].repo = "first_tag" | .files[0].mode = $mode' \
+    "${CONFIG_GITHUB}" >"${WORK}/config-ref.json"
+  VDM_GLOBAL_TOKEN="test-token" VDM_GLOBAL_API="http://127.0.0.1:${PORT}/github" \
+    bash "${SCRIPT}" --env=/dev/null --conf="${WORK}/config-ref.json" --main-dir="${MAIN}" \
+    --url=github.com --zip --no-push --output="${OUT}" >"${LOG}" 2>&1 ||
+    fail "GitHub explicit ref ${mode} failed"
+  output_value "${OUT}" extensions | jq -e --arg ref "${mode#branch:}" '.[0].ref == $ref' >/dev/null ||
+    fail "explicit ref ${mode} was not retained"
+done
+pass "explicit tag and untagged branch do not require a tag listing"
+
+for failure in missing invalid_archive; do
+  MAIN="${WORK}/t10-${failure}"
+  LOG="${WORK}/t10-${failure}.log"
+  if [ "${failure}" = 'missing' ]; then
+    jq '.files[0].mode = "missing"' "${CONFIG_GITHUB}" >"${WORK}/config-invalid.json"
+  else
+    jq '.files[0].repo = "invalid_archive"' "${CONFIG_GITHUB}" >"${WORK}/config-invalid.json"
+  fi
+  if VDM_GLOBAL_TOKEN="test-token" VDM_GLOBAL_API="http://127.0.0.1:${PORT}/github" \
+    bash "${SCRIPT}" --env=/dev/null --conf="${WORK}/config-invalid.json" --main-dir="${MAIN}" \
+      --url=github.com --zip --no-push >"${LOG}" 2>&1; then
+    fail "${failure} must not create a package with an invalid extension ZIP"
+  fi
+  [ ! -d "${MAIN}/packages" ] || fail "${failure} produced package output"
+done
+pass "missing tags and non-ZIP archive responses fail without creating a package"
+
+MAIN="${WORK}/t10-partial"
+LOG="${WORK}/t10-partial.log"
+jq '.files += [{owner: "tests", repo: "invalid_archive", id: "required_plugin", type: "plugin", group: "console", mode: "v1.2.3"}]' \
+  "${CONFIG_GITHUB}" >"${WORK}/config-partial.json"
+if VDM_GLOBAL_TOKEN="test-token" VDM_GLOBAL_API="http://127.0.0.1:${PORT}/github" \
+  bash "${SCRIPT}" --env=/dev/null --conf="${WORK}/config-partial.json" --main-dir="${MAIN}" \
+    --url=github.com --zip --no-push >"${LOG}" 2>&1; then
+  fail "a valid component plus a failed required plugin must not publish a partial package"
+fi
+[ ! -d "${MAIN}/packages" ] || fail "partial package output was created"
+assert_contains "$(cat "${LOG}")" 'Required extension tests/invalid_archive could not be loaded' "required source failure stops the entire package"
 
 echo
 echo "All tests passed."

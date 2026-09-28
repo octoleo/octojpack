@@ -1,5 +1,5 @@
 name: 'Octojpack'
-description: 'Build a Joomla package (zip) from multiple Gitea hosted extensions using a JSON configuration and environment variables, and optionally push it to a Gitea repository.'
+description: 'Build a Joomla package (zip) from multiple Gitea or GitHub hosted extensions using a JSON configuration and environment variables, and optionally push it to a Git repository.'
 author: 'Llewellyn van der Merwe'
 
 branding:
@@ -29,17 +29,17 @@ inputs:
     required: false
     default: ''
 
-  # ------------------------------------------------------------ gitea
+  # ------------------------------------------------------------ git hosting
   token:
-    description: 'Gitea API access token (VDM_GLOBAL_TOKEN). Pass a secret.'
+    description: 'Gitea or GitHub API access token (VDM_GLOBAL_TOKEN). Pass a secret.'
     required: false
     default: ''
   url:
-    description: 'Gitea host without protocol, for example git.vdm.dev (VDM_GLOBAL_URL).'
+    description: 'Git host without protocol, for example github.com or git.vdm.dev (VDM_GLOBAL_URL).'
     required: false
     default: ''
   api:
-    description: 'Gitea API base URL, for example https://git.vdm.dev/api/v1 (VDM_GLOBAL_API).'
+    description: 'Git API base URL, for example https://api.github.com or https://git.vdm.dev/api/v1 (VDM_GLOBAL_API).'
     required: false
     default: ''
 
@@ -133,15 +133,15 @@ inputs:
 
   # ------------------------------------------------------------ repository overrides
   repository-owner:
-    description: 'Owner of the Gitea repository the package is pushed to (VDM_PACKAGE_OWNER).'
+    description: 'Owner of the Git repository the package is pushed to (VDM_PACKAGE_OWNER).'
     required: false
     default: ''
   repository-repo:
-    description: 'Name of the Gitea repository the package is pushed to (VDM_PACKAGE_REPO).'
+    description: 'Name of the Git repository the package is pushed to (VDM_PACKAGE_REPO).'
     required: false
     default: ''
   repository-branch:
-    description: 'Branch of the Gitea repository the package is pushed to (VDM_PACKAGE_REPO_BRANCH).'
+    description: 'Branch of the Git repository the package is pushed to (VDM_PACKAGE_REPO_BRANCH).'
     required: false
     default: ''
   repository-token-name:
@@ -193,7 +193,7 @@ inputs:
     required: false
     default: ''
   push:
-    description: 'Push the package to the Gitea repository named in the configuration (requires git and SSH to be set up, see octoleo/git-user).'
+    description: 'Push the package to the Git repository named in the configuration (requires git and SSH to be set up, see octoleo/git-user).'
     required: false
     default: 'false'
   keep-files:
@@ -272,19 +272,19 @@ outputs:
     description: 'Absolute path of the JSON manifest describing the package and its extensions.'
     value: ${{ steps.octojpack.outputs.package-manifest }}
   repository-owner:
-    description: 'Owner of the Gitea package repository.'
+    description: 'Owner of the Git package repository.'
     value: ${{ steps.octojpack.outputs.repository-owner }}
   repository-repo:
-    description: 'Name of the Gitea package repository.'
+    description: 'Name of the Git package repository.'
     value: ${{ steps.octojpack.outputs.repository-repo }}
   repository-branch:
-    description: 'Branch of the Gitea package repository.'
+    description: 'Branch of the Git package repository.'
     value: ${{ steps.octojpack.outputs.repository-branch }}
   repository-url:
-    description: 'URL of the Gitea package repository.'
+    description: 'URL of the Git package repository.'
     value: ${{ steps.octojpack.outputs.repository-url }}
   pushed:
-    description: 'true when a commit was actually pushed to the Gitea repository.'
+    description: 'true when a commit was actually pushed to the Git repository.'
     value: ${{ steps.octojpack.outputs.pushed }}
   repository-status:
     description: 'pushed (a commit was pushed), unchanged (push enabled but nothing changed) or disabled (push is false).'
@@ -428,7 +428,7 @@ runs:
         export_if_set VDM_ENV_FILE_PATH "$(resolve_path "${INPUT_ENV_FILE}")"
         export_if_set VDM_LICENSE_DIR "$(resolve_path "${INPUT_LICENCE_DIR}")"
 
-        # ---------------------------------------------------------- gitea
+        # ---------------------------------------------------------- git hosting
         export_if_set VDM_GLOBAL_TOKEN "${INPUT_TOKEN}"
         export_if_set VDM_GLOBAL_URL "${INPUT_URL}"
         export_if_set VDM_GLOBAL_API "${INPUT_API}"

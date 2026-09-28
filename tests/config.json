@@ -54,7 +54,8 @@
       "owner": "tests",
       "repo": "missing_example",
       "id": "missing_example",
-      "type": "library"
+      "type": "library",
+      "required": false
     }
   ],
   "languages": [

@@ -9,7 +9,7 @@ It runs on your machine, on a server, or as a [GitHub Action](#github-action) th
 
 Linted by [#ShellCheck](https://github.com/koalaman/shellcheck)
 
-> program only for ubuntu/debian and Gitea systems at this time (should you like to use it on other OS's please open and issue...)
+> Supports Ubuntu/Debian with Gitea or GitHub repositories. For other operating systems, please open an issue.
 ---
 # Install
 ```shell
@@ -209,6 +209,23 @@ Next to the zip you get `<zip name>.sha256` (verify with `sha256sum -c`) and `<z
 
 ---
 # GitHub Action
+
+GitHub-hosted extension sources are supported as well as Gitea. Set `url` to
+`github.com` and `api` to `https://api.github.com` (or use the `/api/v3` API of
+GitHub Enterprise). `mode: "tags"` downloads the latest tag's source archive;
+`mode: "v1.2.3"` downloads that exact tag, and `mode: "branch:main"` downloads a
+branch. These modes do not require a GitHub Release or an uploaded ZIP asset.
+Archives are validated before being included. `mode: "releases"` continues to
+select an uploaded ZIP asset from the latest release.
+
+Every configured extension is required by default: invalid configuration, a
+missing ref or an invalid download stops the build before any package is pushed.
+Set `"required": false` on an individual `files` entry only when deliberately
+allowing that extension to be omitted.
+
+The package destination can also be an existing GitHub repository with SSH write
+access. Create that repository and the configured destination branch first;
+GitHub does not support Gitea's push-to-create behavior.
 
 The repository doubles as a composite GitHub Action (see [action.yml](action.yml)).
 There is nothing to set up: the action runs `src/octojpack` straight from the checkout of the action on the runner (the Ubuntu runners already have git, curl, jq, unzip, zip and wget; a missing tool is installed with apt-get unless `install-dependencies` is false), passes every input through as the environment variable the script already understands, builds the package zip, uploads it as a workflow artifact and exposes the results as outputs so the next job (or the next workflow) can pick the package up.
