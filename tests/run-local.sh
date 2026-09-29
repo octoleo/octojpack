@@ -291,6 +291,16 @@ OUT="${WORK}/t8.out"
 LOG="${WORK}/t8.log"
 CONFIG_NEXT="${WORK}/config-next.json"
 mkdir -p "${MAIN}"
+# Match git-user's inherited tag signing without requiring a GPG agent. Leave
+# user.name/email unset globally so missing-tag recovery must apply the overrides.
+ssh-keygen -q -t ed25519 -N '' -C tests@example.org -f "${WORK}/tag-signing-key"
+printf 'tests@example.org %s\n' "$(cat "${WORK}/tag-signing-key.pub")" >"${WORK}/allowed-signers"
+git config --global gpg.format ssh
+git config --global user.signingkey "${WORK}/tag-signing-key"
+git config --global gpg.ssh.allowedSignersFile "${WORK}/allowed-signers"
+git config --global tag.gpgSign true
+export GIT_EDITOR=false
+PREVIOUS_TAG="$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse refs/tags/v1.2.3)"
 # the component now comes from a repository that carries a newer tag (v1.3.0 in the mock)
 jq '(.files[] | select(.repo == "com_example") | .repo) |= "com_example-next"' "${CONFIG}" >"${CONFIG_NEXT}"
 # Reject the new tag first: an atomic push must leave the branch unchanged.
@@ -323,9 +333,12 @@ pass "test 8 script exit code"
 [ "$(output_value "${OUT}" repository-status)" = "pushed" ] || fail "repository-status should be pushed"
 [ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-list --count master)" = "2" ] || fail "remote should have 2 commits"
 git -C "${REMOTE}/tests/pkg-example.git" show-ref --tags --quiet "refs/tags/v1.3.0" || fail "remote should have the v1.3.0 tag"
+git -C "${REMOTE}/tests/pkg-example.git" verify-tag v1.3.0 >/dev/null 2>&1 || fail "new release tag signature invalid"
+[ "$(git -C "${REMOTE}/tests/pkg-example.git" for-each-ref --format='%(contents:subject)' refs/tags/v1.3.0)" = 'Release v1.3.0' ] || fail "new release tag message missing"
+[ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse 'refs/tags/v1.3.0^{commit}')" = "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse master)" ] || fail "new release tag points at the wrong commit"
 assert_contains "$(git -C "${REMOTE}/tests/pkg-example.git" ls-tree -r --name-only master)" 'src/tests__com_example-next__v1.3.0.zip' "remote tree updated"
 [ -f "${MAIN}/packages/pkg_example_v1.3.0.zip" ] || fail "zip for the new version not found"
-pass "existing repository updated with a new commit and tag"
+pass "existing repository updated with a new commit and signed tag without an editor"
 
 # Simulate an older non-atomic run that published the branch but lost its tag.
 git -C "${REMOTE}/tests/pkg-example.git" update-ref -d refs/tags/v1.3.0
@@ -334,10 +347,12 @@ GIT_SSH_COMMAND="${HERE}/fake-ssh.sh" MOCK_GIT_ROOT="${REMOTE}" \
   run_octojpack --conf="${CONFIG_NEXT}" --main-dir="${WORK}/t8-retry" --licence-dir="${HERE}/licenses" \
     --url="gitea.test" --output="${WORK}/t8-retry.out" >"${LOG}" 2>&1 || fail "missing tag retry failed"
 [ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-list --count master)" = "2" ] || fail "tag retry should not create a commit"
-[ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse refs/tags/v1.3.0)" = "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse master)" ] || fail "missing tag was not restored"
+[ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse 'refs/tags/v1.3.0^{commit}')" = "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse master)" ] || fail "missing tag was not restored"
+git -C "${REMOTE}/tests/pkg-example.git" verify-tag v1.3.0 >/dev/null 2>&1 || fail "recovered release tag signature invalid"
+[ "$(git -C "${REMOTE}/tests/pkg-example.git" for-each-ref --format='%(contents:subject)' refs/tags/v1.3.0)" = 'Release v1.3.0' ] || fail "recovered release tag message missing"
 [ "$(output_value "${WORK}/t8-retry.out" repository-status)" = pushed ] || fail "tag recovery should report a push"
-[ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse refs/tags/v1.2.3)" = "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse master^)" ] || fail "existing release tag was moved"
-pass "unchanged package recovers an absent release tag without moving existing tags"
+[ "$(git -C "${REMOTE}/tests/pkg-example.git" rev-parse refs/tags/v1.2.3)" = "${PREVIOUS_TAG}" ] || fail "existing release tag was moved"
+pass "unchanged package recovers a signed release tag without moving existing tags"
 
 ########################################################################
 echo "== test 9: hardening (cli precedence, relative paths, no env leaks, safe names)"
