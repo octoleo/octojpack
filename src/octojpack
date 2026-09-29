@@ -1164,7 +1164,8 @@ function setRepository() {
     # Recover a previous branch-only publication without manufacturing a commit
     # or moving an existing release tag.
     if ! git show-ref --verify --quiet "refs/tags/${VDM_PACKAGE_VERSION:-1.0.0}"; then
-      git tag "${VDM_PACKAGE_VERSION:-1.0.0}" || return 28
+      setUserDetails
+      git tag -m "Release ${VDM_PACKAGE_VERSION:-1.0.0}" "${VDM_PACKAGE_VERSION:-1.0.0}" || return 28
       pushRepositoryRefs || return 30
       VDM_REPOSITORY_STATUS='pushed'
     fi
@@ -1309,7 +1310,7 @@ function makeGitCommit() {
     # little information of progress
     _echo "[info] Adding TAG (${2}) to (${VDM_PACKAGE_OWNER}/${VDM_PACKAGE_REPO}) repository"
     # add the new tag
-    git tag "${2}" >/dev/null 2>&1 || return 28
+    git tag -m "Release ${2}" "${2}" >/dev/null 2>&1 || return 28
   fi
   # success
   return 0
